@@ -202,9 +202,10 @@ export default {
       // - EAS build environment (mobile builds)
       // - .env files (development)
       
-      eas: {
-        projectId: '0b8a9e9b-2b76-4743-adec-c08db3f01610',
-      },
+  
+         eas: {
+      projectId: '5d428d90-fffb-489e-aa39-848cd4488803',
+    },
     },
     plugins: [
       './plugins/with-fix-react-runtime-modules.js', // 🔧 CRITICAL: Fixes "Redefinition of module 'react_runtime'" error in RN 0.79.x
@@ -292,6 +293,6 @@ export default {
         },
       ],
     ],
-    owner: 'haashinaa',
+    owner: 'dii11',
   },
 };
