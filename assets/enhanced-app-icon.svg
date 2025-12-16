@@ -1,0 +1,94 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Enhanced background with refined gradient -->
+  <rect width="1024" height="1024" rx="200" fill="url(#enhancedGradient)"/>
+  
+  <!-- Subtle background pattern for depth -->
+  <circle cx="200" cy="200" r="80" fill="url(#accentGradient)" opacity="0.1"/>
+  <circle cx="824" cy="824" r="120" fill="url(#accentGradient)" opacity="0.08"/>
+  
+  <!-- Enhanced stethoscope with improved proportions -->
+  <g transform="translate(512, 512)">
+    <!-- Stethoscope tube with consistent stroke weight -->
+    <path d="M-180 -150 Q-180 -80 -120 -80 Q-60 -80 -60 -20 L-60 140 Q-60 180 -20 180 Q20 180 20 140 L20 -20 Q20 -80 80 -80 Q140 -80 140 -150" 
+          stroke="white" 
+          stroke-width="24" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" 
+          fill="none"
+          filter="url(#softShadow)"/>
+    
+    <!-- Left earpiece with refined proportions -->
+    <circle cx="-180" cy="-150" r="42" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="4"
+            filter="url(#softShadow)"/>
+    <circle cx="-180" cy="-150" r="28" fill="url(#earGradient)"/>
+    
+    <!-- Right earpiece -->
+    <circle cx="180" cy="-150" r="42" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="4"
+            filter="url(#softShadow)"/>
+    <circle cx="180" cy="-150" r="28" fill="url(#earGradient)"/>
+    
+    <!-- Enhanced chest piece with better proportions -->
+    <circle cx="0" cy="180" r="60" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="6"
+            filter="url(#chestShadow)"/>
+    <circle cx="0" cy="180" r="45" fill="url(#chestGradient)"/>
+    
+    <!-- Inner chest piece detail -->
+    <circle cx="0" cy="180" r="28" fill="url(#innerChest)" opacity="0.8"/>
+    <circle cx="0" cy="180" r="12" fill="white" opacity="0.9"/>
+  </g>
+  
+  <!-- Definitions -->
+  <defs>
+    <!-- Enhanced main gradient -->
+    <linearGradient id="enhancedGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="25%" stop-color="#3B82F6"/>
+      <stop offset="75%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    
+    <!-- Accent gradient for subtle elements -->
+    <radialGradient id="accentGradient" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- Earpiece gradient -->
+    <radialGradient id="earGradient" cx="0.3" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </radialGradient>
+    
+    <!-- Chest piece gradient -->
+    <radialGradient id="chestGradient" cx="0.3" cy="0.3" r="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="60%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#CBD5E1"/>
+    </radialGradient>
+    
+    <!-- Inner chest gradient -->
+    <radialGradient id="innerChest" cx="0.4" cy="0.4" r="0.8">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </radialGradient>
+    
+    <!-- Soft shadow filter -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.15" flood-color="#1E293B"/>
+    </filter>
+    
+    <!-- Chest piece shadow -->
+    <filter id="chestShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-opacity="0.2" flood-color="#1E293B"/>
+    </filter>
+  </defs>
+</svg>

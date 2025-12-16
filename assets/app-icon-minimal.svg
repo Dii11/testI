@@ -1,0 +1,34 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Minimal version with simplified geometry -->
+  <rect width="1024" height="1024" rx="200" fill="url(#minimalGradient)"/>
+  
+  <!-- Simplified stethoscope with cleaner lines -->
+  <g transform="translate(512, 512)">
+    <!-- Simplified tube -->
+    <path d="M-160 -120 Q-160 -60 -100 -60 Q-40 -60 -40 -20 L-40 120 Q-40 160 0 160 Q40 160 40 120 L40 -20 Q40 -60 100 -60 Q160 -60 160 -120" 
+          stroke="white" 
+          stroke-width="20" 
+          stroke-linecap="round" 
+          fill="none"/>
+    
+    <!-- Simplified earpieces -->
+    <circle cx="-160" cy="-120" r="35" fill="white"/>
+    <circle cx="160" cy="-120" r="35" fill="white"/>
+    
+    <!-- Simplified chest piece -->
+    <circle cx="0" cy="160" r="50" fill="white"/>
+    <circle cx="0" cy="160" r="30" fill="url(#minimalChest)"/>
+  </g>
+  
+  <defs>
+    <linearGradient id="minimalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    
+    <radialGradient id="minimalChest" cx="0.4" cy="0.4" r="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </radialGradient>
+  </defs>
+</svg>

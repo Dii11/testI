@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="19" failures="10" errors="0" time="1.806">
+  <testsuite name="src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts" errors="0" failures="10" skipped="0" timestamp="2025-09-19T05:02:04" time="1.363" tests="19">
+    <testcase classname="Enhanced AppleHealthKitProvider › Connection State Monitoring" name="should start in disconnected state" time="0.003">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Connection State Monitoring" name="should notify listeners of connection state changes" time="0.016">
+      <failure>Error: expect(received).toContain(expected) // indexOf
+
+Expected value: &quot;connected&quot;
+Received array: [&quot;connecting&quot;]
+    at Object.toContain (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:110:28)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Connection State Monitoring" name="should handle connection state listener errors gracefully" time="0.004">
+      <failure>Error: expect(received).resolves.toBe(expected) // Object.is equality
+
+Expected: true
+Received: false
+    at Object.toBe (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/expect/build/index.js:174:22)
+    at Object.toBe (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:124:52)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at Object.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at Promise.then.completed (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:316:40)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at _runTest (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:121:9)
+    at _runTestsForDescribeBlock (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/jest-runner/build/runTest.js:444:34)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Connection State Monitoring" name="should set state to disconnected on initialization failure" time="0.003">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: &quot;disconnected&quot;
+Received: &quot;connecting&quot;
+    at Object.toBe (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:134:45)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Rate Limiting Protection" name="should allow normal request rates" time="0.003">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Rate Limiting Protection" name="should block requests when rate limit is exceeded" time="0.003">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Rate Limiting Protection" name="should apply rate limiting to readHealthData" time="0.002">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Rate Limiting Protection" name="should apply rate limiting to requestPermissions" time="0.001">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Permission Pre-checks" name="should check permissions before reading data" time="0.004">
+      <failure>Error: Apple HealthKit not initialized
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:385:13)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at AppleHealthKitProvider.apply [as readHealthData] (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:374:23)
+    at Object.readHealthData (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:211:37)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Permission Pre-checks" name="should proceed with reading when permissions are granted" time="0.002">
+      <failure>Error: Apple HealthKit not initialized
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:385:13)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at AppleHealthKitProvider.apply [as readHealthData] (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:374:23)
+    at Object.readHealthData (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:228:37)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Permission Pre-checks" name="should handle permission check errors gracefully" time="0.002">
+      <failure>Error: Apple HealthKit not initialized
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:385:13)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at AppleHealthKitProvider.apply [as readHealthData] (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:374:23)
+    at Object.readHealthData (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:246:37)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Error Handling with Retry Logic" name="should retry on retryable errors" time="0.002">
+      <failure>Error: Apple HealthKit not initialized
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:385:13)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at AppleHealthKitProvider.apply [as readHealthData] (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:374:23)
+    at Object.readHealthData (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:272:37)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Error Handling with Retry Logic" name="should not retry on non-retryable errors" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: 1
+Received: 0
+    at Object.toBe (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:295:25)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Error Handling with Retry Logic" name="should classify errors correctly" time="0.004">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Error Handling with Retry Logic" name="should determine retryability correctly" time="0.005">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › iOS Version Handling" name="should detect iOS version correctly" time="0.001">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › iOS Version Handling" name="should use modern permission request on iOS 17+" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: true
+Received: false
+    at Object.toBe (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:331:22)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Enhanced Cleanup" name="should clear all state on cleanup" time="0.002">
+    </testcase>
+    <testcase classname="Enhanced AppleHealthKitProvider › Background Batch Processing" name="should handle steps batch processing with rate limiting" time="0.002">
+      <failure>Error: Apple HealthKit not initialized
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:385:13)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at /Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+    at new Promise (&lt;anonymous&gt;)
+    at AppleHealthKitProvider.&lt;anonymous&gt; (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+    at AppleHealthKitProvider.apply [as readHealthData] (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/AppleHealthKitProvider.ts:374:23)
+    at Object.readHealthData (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/src/services/health/providers/__tests__/AppleHealthKitProvider.enhanced.test.ts:368:37)
+    at Generator.next (&lt;anonymous&gt;)
+    at asyncGeneratorStep (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+    at _next (/Users/rochelhasina/Documents/hopmed/hopmed-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,74 @@
+diff --git a/node_modules/@daily-co/react-native-webrtc/lib/commonjs/EventEmitter.js b/node_modules/@daily-co/react-native-webrtc/lib/commonjs/EventEmitter.js
+index 2da9d36..020ca8b 100644
+--- a/node_modules/@daily-co/react-native-webrtc/lib/commonjs/EventEmitter.js
++++ b/node_modules/@daily-co/react-native-webrtc/lib/commonjs/EventEmitter.js
+@@ -17,10 +17,16 @@ const {
+ 
+ // This emitter is going to be used to listen to all the native events (once) and then
+ // re-emit them on a JS-only emitter.
+-const nativeEmitter = new _reactNative.NativeEventEmitter(WebRTCModule);
++// PATCH: Add null check for React Native 0.79+ compatibility
++const nativeEmitter = WebRTCModule ? new _reactNative.NativeEventEmitter(WebRTCModule) : null;
+ const NATIVE_EVENTS = ['peerConnectionSignalingStateChanged', 'peerConnectionStateChanged', 'peerConnectionOnRenegotiationNeeded', 'peerConnectionIceConnectionChanged', 'peerConnectionIceGatheringChanged', 'peerConnectionGotICECandidate', 'peerConnectionDidOpenDataChannel', 'peerConnectionOnRemoveTrack', 'peerConnectionOnTrack', 'dataChannelStateChanged', 'dataChannelReceiveMessage', 'dataChannelDidChangeBufferedAmount', 'mediaStreamTrackMuteChanged', 'mediaStreamTrackEnded', 'mediaDevicesOnDeviceChange'];
+ const eventEmitter = new _EventEmitter.default();
+ function setupNativeEvents() {
++  // PATCH: Guard against null nativeEmitter
++  if (!nativeEmitter) {
++    console.warn('[WebRTC] NativeEventEmitter not available, skipping event setup');
++    return;
++  }
+   for (const eventName of NATIVE_EVENTS) {
+     nativeEmitter.addListener(eventName, (...args) => {
+       eventEmitter.emit(eventName, ...args);
+diff --git a/node_modules/@daily-co/react-native-webrtc/lib/module/EventEmitter.js b/node_modules/@daily-co/react-native-webrtc/lib/module/EventEmitter.js
+index 10c1d17..11c0004 100644
+--- a/node_modules/@daily-co/react-native-webrtc/lib/module/EventEmitter.js
++++ b/node_modules/@daily-co/react-native-webrtc/lib/module/EventEmitter.js
+@@ -9,10 +9,16 @@ const {
+ 
+ // This emitter is going to be used to listen to all the native events (once) and then
+ // re-emit them on a JS-only emitter.
+-const nativeEmitter = new NativeEventEmitter(WebRTCModule);
++// PATCH: Add null check for React Native 0.79+ compatibility
++const nativeEmitter = WebRTCModule ? new NativeEventEmitter(WebRTCModule) : null;
+ const NATIVE_EVENTS = ['peerConnectionSignalingStateChanged', 'peerConnectionStateChanged', 'peerConnectionOnRenegotiationNeeded', 'peerConnectionIceConnectionChanged', 'peerConnectionIceGatheringChanged', 'peerConnectionGotICECandidate', 'peerConnectionDidOpenDataChannel', 'peerConnectionOnRemoveTrack', 'peerConnectionOnTrack', 'dataChannelStateChanged', 'dataChannelReceiveMessage', 'dataChannelDidChangeBufferedAmount', 'mediaStreamTrackMuteChanged', 'mediaStreamTrackEnded', 'mediaDevicesOnDeviceChange'];
+ const eventEmitter = new EventEmitter();
+ export function setupNativeEvents() {
++  // PATCH: Guard against null nativeEmitter
++  if (!nativeEmitter) {
++    console.warn('[WebRTC] NativeEventEmitter not available, skipping event setup');
++    return;
++  }
+   for (const eventName of NATIVE_EVENTS) {
+     nativeEmitter.addListener(eventName, (...args) => {
+       eventEmitter.emit(eventName, ...args);
+diff --git a/node_modules/@daily-co/react-native-webrtc/src/EventEmitter.ts b/node_modules/@daily-co/react-native-webrtc/src/EventEmitter.ts
+index db02c39..b5fee02 100644
+--- a/node_modules/@daily-co/react-native-webrtc/src/EventEmitter.ts
++++ b/node_modules/@daily-co/react-native-webrtc/src/EventEmitter.ts
+@@ -6,7 +6,11 @@ const { WebRTCModule } = NativeModules;
+ 
+ // This emitter is going to be used to listen to all the native events (once) and then
+ // re-emit them on a JS-only emitter.
+-const nativeEmitter = new NativeEventEmitter(WebRTCModule);
++// PATCH: Add null check for React Native 0.79+ compatibility
++// See: https://github.com/facebook/react-native/issues/44502
++const nativeEmitter = WebRTCModule
++    ? new NativeEventEmitter(WebRTCModule)
++    : null;
+ 
+ const NATIVE_EVENTS = [
+     'peerConnectionSignalingStateChanged',
+@@ -29,6 +33,12 @@ const NATIVE_EVENTS = [
+ const eventEmitter = new EventEmitter();
+ 
+ export function setupNativeEvents() {
++    // PATCH: Guard against null nativeEmitter
++    if (!nativeEmitter) {
++        console.warn('[WebRTC] NativeEventEmitter not available, skipping event setup');
++        return;
++    }
++
+     for (const eventName of NATIVE_EVENTS) {
+         nativeEmitter.addListener(eventName, (...args) => {
+             eventEmitter.emit(eventName, ...args);

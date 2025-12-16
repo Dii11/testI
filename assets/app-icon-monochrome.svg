@@ -1,0 +1,25 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Monochrome version for special use cases -->
+  <rect width="1024" height="1024" rx="200" fill="#FFFFFF"/>
+  
+  <!-- Single-color stethoscope -->
+  <g transform="translate(512, 512)">
+    <path d="M-180 -150 Q-180 -80 -120 -80 Q-60 -80 -60 -20 L-60 140 Q-60 180 -20 180 Q20 180 20 140 L20 -20 Q20 -80 80 -80 Q140 -80 140 -150" 
+          stroke="#1F2937" 
+          stroke-width="28" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" 
+          fill="none"/>
+    
+    <circle cx="-180" cy="-150" r="44" fill="#1F2937"/>
+    <circle cx="-180" cy="-150" r="26" fill="#FFFFFF"/>
+    
+    <circle cx="180" cy="-150" r="44" fill="#1F2937"/>
+    <circle cx="180" cy="-150" r="26" fill="#FFFFFF"/>
+    
+    <circle cx="0" cy="180" r="62" fill="#1F2937"/>
+    <circle cx="0" cy="180" r="40" fill="#FFFFFF"/>
+    <circle cx="0" cy="180" r="22" fill="#1F2937"/>
+    <circle cx="0" cy="180" r="10" fill="#FFFFFF"/>
+  </g>
+</svg>

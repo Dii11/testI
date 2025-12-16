@@ -1,0 +1,124 @@
+{
+  "cli": {
+    "version": ">= 16.17.4",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "HOPMED_BUILD_ENVIRONMENT": "development",
+        "HOPMED_BUILD_SENTRY_ENABLED": "true",
+        "HOPMED_DEBUG_MODE": "true",
+        "HOPMED_INIT_TIMEOUT": "15000",
+        "HOPMED_SPLASH_TIMEOUT": "10000",
+        "HOPMED_REDUX_PERSIST_TIMEOUT": "12000",
+        "HOPMED_PERMISSION_TIMEOUT": "8000"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "prebuildCommand": "npx expo prebuild --clean",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease",
+        "env": {
+          "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
+          "ANDROID_HEALTH_CONNECT_ENABLED": "true"
+        }
+      },
+      "ios": {
+        "resourceClass": "m-medium",
+        "autoIncrement": true
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "HOPMED_BUILD_ENVIRONMENT": "staging",
+        "HOPMED_VIDEO_DAILY_DOMAIN": "mbinina.daily.co",
+        "HOPMED_DEBUG_MODE": "false",
+        "HOPMED_INIT_TIMEOUT": "15000",
+        "HOPMED_SPLASH_TIMEOUT": "10000",
+        "HOPMED_REDUX_PERSIST_TIMEOUT": "12000",
+        "HOPMED_PERMISSION_TIMEOUT": "8000",
+        "HOPMED_BUILD_HEALTHKIT_ENABLED": "true",
+        "HOPMED_BUILD_HEALTH_CONNECT_ENABLED": "true",
+        "HOPMED_FEATURE_VIDEO_ENABLED": "true",
+        "HOPMED_FEATURE_HEALTH_ENABLED": "true",
+        "HOPMED_FEATURE_ANALYTICS_ENABLED": "true",
+        "HOPMED_FEATURE_PUSH_NOTIFICATIONS_ENABLED": "true"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "prebuildCommand": "npx expo prebuild --clean",
+      "ios": {
+        "resourceClass": "m-medium",
+        "autoIncrement": true,
+        "distribution": "store"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "env": {
+          "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
+          "ANDROID_HEALTH_CONNECT_ENABLED": "true"
+        }
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "HOPMED_BUILD_ENVIRONMENT": "production",
+        "HOPMED_BUILD_SENTRY_ENABLED": "true",
+        "HOPMED_DEBUG_MODE": "false",
+        "HOPMED_DEBUG_MOCK_CUSTOMERS": "false",
+        "HOPMED_INIT_TIMEOUT": "15000",
+        "HOPMED_SPLASH_TIMEOUT": "10000",
+        "HOPMED_REDUX_PERSIST_TIMEOUT": "12000",
+        "HOPMED_PERMISSION_TIMEOUT": "8000",
+        "HOPMED_BUILD_HEALTHKIT_ENABLED": "true",
+        "HOPMED_BUILD_HEALTH_CONNECT_ENABLED": "true",
+        "HOPMED_FEATURE_VIDEO_ENABLED": "true",
+        "HOPMED_FEATURE_HEALTH_ENABLED": "true",
+        "HOPMED_FEATURE_ANALYTICS_ENABLED": "true",
+        "HOPMED_FEATURE_PUSH_NOTIFICATIONS_ENABLED": "true",
+        "HOPMED_FEATURE_AGORA_ENABLED": "false"
+      }
+    },
+    "production-apk": {
+      "extends": "production",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease",
+        "env": {
+          "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
+          "ANDROID_HEALTH_CONNECT_ENABLED": "true"
+        }
+      }
+    },
+    "testflight": {
+      "extends": "production",
+      "ios": {
+        "resourceClass": "m-medium",
+        "autoIncrement": true,
+        "distribution": "store"
+      }
+    }
+  },
+  "submit": {
+    "preview": {
+      "ios": {
+        "ascAppId": "6751348678"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "6751348678"
+      }
+    },
+    "testflight": {
+      "ios": {
+        "ascAppId": "6751348678"
+      }
+    }
+  }
+}

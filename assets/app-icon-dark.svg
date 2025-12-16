@@ -1,0 +1,65 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark theme variant -->
+  <rect width="1024" height="1024" rx="200" fill="url(#darkGradient)"/>
+  
+  <!-- Subtle background elements -->
+  <circle cx="200" cy="200" r="80" fill="url(#darkAccent)" opacity="0.15"/>
+  <circle cx="824" cy="824" r="120" fill="url(#darkAccent)" opacity="0.1"/>
+  
+  <!-- Stethoscope optimized for dark backgrounds -->
+  <g transform="translate(512, 512)">
+    <path d="M-180 -150 Q-180 -80 -120 -80 Q-60 -80 -60 -20 L-60 140 Q-60 180 -20 180 Q20 180 20 140 L20 -20 Q20 -80 80 -80 Q140 -80 140 -150" 
+          stroke="#F8FAFC" 
+          stroke-width="24" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" 
+          fill="none"
+          filter="url(#glowEffect)"/>
+    
+    <circle cx="-180" cy="-150" r="42" fill="#F8FAFC" filter="url(#glowEffect)"/>
+    <circle cx="-180" cy="-150" r="28" fill="url(#darkEarGradient)"/>
+    
+    <circle cx="180" cy="-150" r="42" fill="#F8FAFC" filter="url(#glowEffect)"/>
+    <circle cx="180" cy="-150" r="28" fill="url(#darkEarGradient)"/>
+    
+    <circle cx="0" cy="180" r="60" fill="#F8FAFC" filter="url(#glowEffect)"/>
+    <circle cx="0" cy="180" r="45" fill="url(#darkChestGradient)"/>
+    <circle cx="0" cy="180" r="28" fill="url(#darkInnerChest)" opacity="0.9"/>
+    <circle cx="0" cy="180" r="12" fill="#F8FAFC" opacity="0.95"/>
+  </g>
+  
+  <defs>
+    <linearGradient id="darkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="25%" stop-color="#312E81"/>
+      <stop offset="75%" stop-color="#1E40AF"/>
+      <stop offset="100%" stop-color="#1F2937"/>
+    </linearGradient>
+    
+    <radialGradient id="darkAccent" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    
+    <radialGradient id="darkEarGradient" cx="0.3" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#CBD5E1"/>
+    </radialGradient>
+    
+    <radialGradient id="darkChestGradient" cx="0.3" cy="0.3" r="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="60%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </radialGradient>
+    
+    <radialGradient id="darkInnerChest" cx="0.4" cy="0.4" r="0.8">
+      <stop offset="0%" stop-color="#CBD5E1"/>
+      <stop offset="100%" stop-color="#64748B"/>
+    </radialGradient>
+    
+    <filter id="glowEffect" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-opacity="0.3" flood-color="#60A5FA"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.2" flood-color="#000000"/>
+    </filter>
+  </defs>
+</svg>

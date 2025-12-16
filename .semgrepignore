@@ -1,0 +1,84 @@
+# Semgrep ignore file for security scanning
+# Specify files and directories to exclude from security analysis
+
+# Dependencies and build artifacts
+node_modules/
+.expo/
+web-build/
+dist/
+build/
+coverage/
+
+# Development and testing files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+__mocks__/
+jest.setup.js
+jest.config.*
+
+# Documentation and configuration
+*.md
+*.json
+*.yml
+*.yaml
+.git/
+.gitignore
+
+# Expo specific
+.expo-shared/
+expo-env.d.ts
+
+# Platform specific
+ios/
+android/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (these should be scanned but may contain test data)
+# .env*
+
+# Asset files
+assets/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.pdf
+
+# Font files
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.eot
+
+# Audio/Video files
+*.mp3
+*.mp4
+*.avi
+*.mov
+*.wav
+
+# Generated TypeScript files
+*.d.ts
+
+# Temporary files
+tmp/
+temp/
+.tmp/

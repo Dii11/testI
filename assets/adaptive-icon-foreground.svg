@@ -1,0 +1,75 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Adaptive icon foreground - transparent background with centered stethoscope -->
+  
+  <!-- Enhanced stethoscope with improved proportions, sized for adaptive icon safe zone -->
+  <g transform="translate(512, 512) scale(0.6)">
+    <!-- Stethoscope tube with consistent stroke weight -->
+    <path d="M-180 -150 Q-180 -80 -120 -80 Q-60 -80 -60 -20 L-60 140 Q-60 180 -20 180 Q20 180 20 140 L20 -20 Q20 -80 80 -80 Q140 -80 140 -150" 
+          stroke="white" 
+          stroke-width="28" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" 
+          fill="none"
+          filter="url(#adaptiveShadow)"/>
+    
+    <!-- Left earpiece with refined proportions -->
+    <circle cx="-180" cy="-150" r="46" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="4"
+            filter="url(#adaptiveShadow)"/>
+    <circle cx="-180" cy="-150" r="30" fill="url(#adaptiveEarGradient)"/>
+    
+    <!-- Right earpiece -->
+    <circle cx="180" cy="-150" r="46" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="4"
+            filter="url(#adaptiveShadow)"/>
+    <circle cx="180" cy="-150" r="30" fill="url(#adaptiveEarGradient)"/>
+    
+    <!-- Enhanced chest piece with better proportions -->
+    <circle cx="0" cy="180" r="66" 
+            fill="white" 
+            stroke="white" 
+            stroke-width="6"
+            filter="url(#adaptiveChestShadow)"/>
+    <circle cx="0" cy="180" r="50" fill="url(#adaptiveChestGradient)"/>
+    
+    <!-- Inner chest piece detail -->
+    <circle cx="0" cy="180" r="32" fill="url(#adaptiveInnerChest)" opacity="0.8"/>
+    <circle cx="0" cy="180" r="14" fill="white" opacity="0.9"/>
+  </g>
+  
+  <!-- Definitions -->
+  <defs>
+    <!-- Earpiece gradient -->
+    <radialGradient id="adaptiveEarGradient" cx="0.3" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </radialGradient>
+    
+    <!-- Chest piece gradient -->
+    <radialGradient id="adaptiveChestGradient" cx="0.3" cy="0.3" r="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="60%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#CBD5E1"/>
+    </radialGradient>
+    
+    <!-- Inner chest gradient -->
+    <radialGradient id="adaptiveInnerChest" cx="0.4" cy="0.4" r="0.8">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </radialGradient>
+    
+    <!-- Adaptive icon shadow -->
+    <filter id="adaptiveShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.2" flood-color="#1E293B"/>
+    </filter>
+    
+    <!-- Chest piece shadow -->
+    <filter id="adaptiveChestShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-opacity="0.25" flood-color="#1E293B"/>
+    </filter>
+  </defs>
+</svg>

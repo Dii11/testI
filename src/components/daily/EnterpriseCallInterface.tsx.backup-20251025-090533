@@ -1,0 +1,2493 @@
+  /**
+ * ✨ ENHANCED: Enterprise-Grade Medical Video Call Interface
+ *
+ * This version adds:
+ * 1. ✅ Comprehensive SDK error handling (all Daily.co events)
+ * 2. ✅ Call health monitoring with heartbeat checks
+ * 3. ✅ Explicit track cleanup to prevent memory leaks
+ * 4. ✅ Stable event handler references (fixes stale closures)
+ * 5. ✅ CallKit and Foreground Service integration
+ * 6. ✅ Optimized track sync (reduces unnecessary retries)
+ *
+ * MIGRATION: Replace EnterpriseCallInterface.tsx with this file
+ */
+
+import { DailyMediaView } from '@daily-co/react-native-daily-js';
+import type DailyMediaStreamTrack from '@daily-co/react-native-webrtc/lib/typescript/MediaStreamTrack';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import React, { useEffect, useCallback, useState, useMemo, useRef } from 'react';
+import {
+  View,
+  StyleSheet,
+  SafeAreaView,
+  Text,
+  TouchableOpacity,
+  Dimensions,
+  StatusBar,
+  Platform,
+  Animated,
+  ActivityIndicator,
+} from 'react-native';
+
+import DailyCallManager from '../../services/DailyCallManager';
+import VideoCallBackgroundManager from '../../services/VideoCallBackgroundManager';
+import type { VideoCallBackgroundListener } from '../../services/VideoCallBackgroundManager';
+import CallPerformanceMonitor from '../../utils/CallPerformanceMonitor';
+// ✨ NEW: Import native platform managers
+import CallKitManager from '../../services/CallKitManager';
+import ForegroundServiceManager from '../../services/ForegroundServiceManager';
+
+// Daily.co type shims
+interface DailyParticipantTrack {
+  persistentTrack?: DailyMediaStreamTrack | null;
+}
+interface DailyParticipant {
+  session_id: string; // ✨ NEW: Unique session identifier
+  user_name?: string;
+  local?: boolean;
+  tracks?: { video?: DailyParticipantTrack; audio?: DailyParticipantTrack };
+}
+interface DailyParticipantCounts {
+  present: number;
+}
+interface DailyNetworkStats {
+  stats?: {
+    video?: { recvLatency?: number; recvPacketLoss?: number };
+    audio?: { recvLatency?: number };
+  };
+}
+interface DailyCall {
+  participantCounts(): DailyParticipantCounts;
+  participants(): Record<string, DailyParticipant>;
+  localVideo(): boolean;
+  localAudio(): boolean;
+  setLocalVideo(enabled: boolean): void;
+  setLocalAudio(enabled: boolean): void;
+  getNetworkStats(): Promise<DailyNetworkStats>;
+  join(options: Record<string, unknown>): Promise<void>;
+  leave(): Promise<void>;
+  on(event: string, handler: (ev?: unknown) => void): DailyCall;
+  off(event: string, handler?: (ev?: unknown) => void): DailyCall;
+}
+interface DailyParticipantEvent {
+  participant?: DailyParticipant;
+  type?: string;
+  event?: string;
+  message?: string;
+  errorMsg?: string;
+  action?: string;
+}
+
+// Dev logging helpers
+const devLog = (...args: unknown[]) => {
+  if (__DEV__) {
+    /* eslint-disable no-console */ console.log(...args);
+  }
+};
+const devWarn = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.warn(...args);
+  }
+};
+const devError = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.error(...args);
+  }
+};
+
+// ✅ FIX #1: Track state validation helper
+const isTrackLive = (track: DailyMediaStreamTrack | null): boolean => {
+  if (!track) return false;
+
+  // Check if track exists and is actively streaming
+  const readyState = (track as any)?.readyState;
+  const isLive = readyState === 'live';
+
+  if (__DEV__ && track && !isLive) {
+    devLog(`🎥 Track state check: readyState=${readyState}, id=${(track as any)?.id}`);
+  }
+
+  return isLive;
+};
+
+interface EnterpriseCallInterfaceProps {
+  roomUrl: string;
+  callType: 'audio' | 'video';
+  contactName?: string;
+  contactTitle?: string;
+  onEndCall: () => void;
+  onError?: (error: Error) => void;
+  autoJoin?: boolean;
+  userName?: string;
+  userId?: string;
+  medicalContext?: {
+    consultationType?: 'routine' | 'urgent' | 'emergency' | 'follow-up';
+    appointmentTime?: Date;
+    duration?: number;
+  };
+}
+
+const QUALITY_CONFIG = {
+  excellent: { threshold: 80, pollInterval: 10000 },
+  good: { threshold: 60, pollInterval: 7000 },
+  fair: { threshold: 40, pollInterval: 5000 },
+  poor: { threshold: 0, pollInterval: 3000 },
+} as const;
+
+const EnterpriseCallInterface: React.FC<EnterpriseCallInterfaceProps> = ({
+  roomUrl,
+  callType,
+  contactName = 'Healthcare Provider',
+  contactTitle = 'Medical Professional',
+  onEndCall,
+  onError,
+  autoJoin = true,
+  userName,
+  userId,
+  medicalContext,
+}) => {
+  // Core call state
+  const [callObject, setCallObject] = useState<DailyCall | null>(null);
+  const [appState, setAppState] = useState<'idle' | 'joining' | 'joined' | 'error' | 'leaving'>(
+    'idle'
+  );
+
+  // Connection monitoring state
+  const [connectionState, setConnectionState] = useState({
+    isStuck: false,
+    stuckReason: null as 'join_timeout' | 'waiting_timeout' | 'video_failed' | 'connection_lost' | null,
+    joinStartTime: null as number | null,
+    hasRemoteVideo: false,
+    hasRemoteAudio: false,
+    connectionAttempts: 0,
+    lastSuccessfulConnection: null as number | null,
+    lastHeartbeat: Date.now(),
+  });
+
+  // Simplified call state
+  const [callState, setCallState] = useState({
+    videoTrack: null as DailyMediaStreamTrack | null,
+    localVideoTrack: null as DailyMediaStreamTrack | null,
+    remoteParticipantCount: 0,
+    isCameraMuted: false, // ✅ LOCAL camera state only
+    isMicMuted: false, // ✅ LOCAL mic state only
+    callDuration: 0,
+    callStartTime: null as Date | null,
+    // ✅ NEW: Track remote states separately
+    isRemoteCameraOff: false,
+    isRemoteMicOff: false, // ✅ NEW: Track remote mic state
+  });
+
+  const [networkState, setNetworkState] = useState({
+    quality: 'good' as keyof typeof QUALITY_CONFIG,
+    latency: 0,
+    packetLoss: 0,
+  });
+
+  const [uiState, setUiState] = useState({
+    isFullscreen: false,
+    showControls: true,
+    isRecoveringFromBackground: false,
+    showBackgroundCallNotice: false,
+  });
+
+  // ✨ NEW: Track current remote participant to prevent mixing
+  const [currentRemoteSessionId, setCurrentRemoteSessionId] = useState<string | null>(null);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  // ✅ FIX: Sync camera preference with background manager (simplified)
+  useEffect(() => {
+    if (callType !== 'video') return;
+    const manager = VideoCallBackgroundManager.getInstance();
+    const resolvedCameraEnabled = callObject ? callObject.localVideo() : !callState.isCameraMuted;
+    manager.setUserCameraPreference(resolvedCameraEnabled);
+  }, [callType, callState.isCameraMuted, callObject]);
+
+  // Refs for intervals and timers
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const networkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const backgroundManagerUnsubscribeRef = useRef<(() => void) | null>(null);
+  const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const waitingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ✨ NEW: Heartbeat monitoring
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ✨ NEW: CallKit/Foreground service tracking
+  const callUUID = useRef<string>(`call-${Date.now()}`).current;
+  const cameraToggleInFlightRef = useRef(false);
+  const eventHandlersRef = useRef<any>({});
+  // ✨ NEW: Remote track fallback timeout (when tracked remote loses video)
+  const remoteTrackFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Screen dimensions
+  const screenData = useMemo(() => {
+    const { width, height } = Dimensions.get('window');
+    return {
+      width,
+      height,
+      isLandscape: width > height,
+      isTablet: Math.min(width, height) >= 768,
+    };
+  }, []);
+
+  // ✨ NEW: Scan for any remote participant with a live video track and switch
+  const scanForRemoteWithVideo = useCallback(() => {
+    if (!callObject) return false;
+    try {
+      const participants = callObject.participants();
+      let foundSessionId: string | null = null;
+      let foundTrack: DailyMediaStreamTrack | null = null;
+      Object.values(participants || {}).forEach((p: any) => {
+        if (!p?.local && p?.tracks?.video?.persistentTrack && !foundSessionId) {
+          const t = p.tracks.video.persistentTrack as DailyMediaStreamTrack;
+          if ((t as any)?.readyState === 'live') {
+            foundSessionId = p.session_id as string;
+            foundTrack = t;
+          }
+        }
+      });
+      if (foundSessionId && foundTrack) {
+        devLog('🎥 Switching tracked remote to', foundSessionId, 'track', (foundTrack as any)?.id);
+        setCurrentRemoteSessionId(foundSessionId);
+        setCallState(prev => ({ ...prev, videoTrack: foundTrack! }));
+        setConnectionState(prev => ({ ...prev, hasRemoteVideo: true }));
+        return true;
+      }
+    } catch (e) {
+      devWarn('Remote scan failed:', e);
+    }
+    return false;
+  }, [callObject]);
+
+  // ✨ FIX #5: Track lifecycle handlers with strict local/remote separation
+  const onTrackStarted = useCallback(
+    (ev?: unknown) => {
+      const event = ev as any;
+      if (!callObject) return;
+      const participant = event?.participant;
+      if (!participant) return;
+
+      const kind = event?.track?.kind || event?.kind || 'unknown';
+
+      // ✅ Handle video tracks
+      if (kind === 'video') {
+        // ✅ CRITICAL: Strict local check - ONLY update LOCAL state
+        if (participant.local === true) {
+          const localTrack = participant.tracks?.video?.persistentTrack as DailyMediaStreamTrack | undefined;
+          if (localTrack && (localTrack as any)?.readyState === 'live') {
+            devLog('📹 [LOCAL] Video track started id=', (localTrack as any)?.id);
+            setCallState(prev => ({
+              ...prev,
+              localVideoTrack: localTrack,
+              // ⚠️ NEVER update isCameraMuted here - only periodic sync does this
+            }));
+          }
+          return; // ✅ Early return - remote events cannot affect local state
+        }
+
+        // ✅ Handle remote participants (only if local === false)
+        if (participant.local === false) {
+          if (participant.session_id === currentRemoteSessionId) {
+            const remoteTrack = participant.tracks?.video?.persistentTrack as DailyMediaStreamTrack | undefined;
+            if (remoteTrack) {
+              devLog('📹 [REMOTE] Video track started for', participant.session_id, 'id=', (remoteTrack as any)?.id);
+              setCallState(prev => ({
+                ...prev,
+                videoTrack: remoteTrack,
+                isRemoteCameraOff: false, // ✅ Remote camera is ON
+              }));
+              setConnectionState(prev => ({ ...prev, hasRemoteVideo: true }));
+            }
+          } else if (!currentRemoteSessionId && participant.tracks?.video?.persistentTrack) {
+            // If nothing is tracked yet, start tracking this remote
+            const remoteTrack = participant.tracks.video.persistentTrack as DailyMediaStreamTrack;
+            devLog('🎥 [REMOTE] Tracking remote from track-started:', participant.session_id, 'id=', (remoteTrack as any)?.id);
+            setCurrentRemoteSessionId(participant.session_id);
+            setCallState(prev => ({
+              ...prev,
+              videoTrack: remoteTrack,
+              isRemoteCameraOff: false, // ✅ Remote camera is ON
+            }));
+            setConnectionState(prev => ({ ...prev, hasRemoteVideo: true }));
+          }
+        } else {
+          // ✅ FIX: Log unexpected participant.local value
+          devWarn('⚠️ video track-started: Participant with undefined/null local property:', participant);
+        }
+      }
+
+      // ✅ NEW: Handle audio tracks
+      if (kind === 'audio') {
+        // ✅ CRITICAL: Strict local check - ONLY update LOCAL state
+        if (participant.local === true) {
+          devLog('🎤 [LOCAL] Audio track started');
+          // Local audio track started - periodic sync will handle isMicMuted
+          return; // ✅ Early return - remote events cannot affect local state
+        }
+
+        // ✅ Handle remote participants (only if local === false)
+        if (participant.local === false) {
+          if (participant.session_id === currentRemoteSessionId) {
+            devLog('🎤 [REMOTE] Audio track started for', participant.session_id);
+            setCallState(prev => ({
+              ...prev,
+              isRemoteMicOff: false, // ✅ Remote mic is ON
+            }));
+          }
+        } else {
+          devWarn('⚠️ audio track-started: Participant with undefined/null local property:', participant);
+        }
+      }
+    },
+    [callObject, currentRemoteSessionId]
+  );
+
+  const onTrackStopped = useCallback(
+    (ev?: unknown) => {
+      const event = ev as any;
+      if (!callObject) return;
+      const participant = event?.participant;
+      if (!participant) return;
+
+      const kind = event?.track?.kind || event?.kind || 'unknown';
+
+      // ✅ Handle video tracks
+      if (kind === 'video') {
+        // ✅ CRITICAL: Strict local check - ONLY update LOCAL state
+        if (participant.local === true) {
+          devLog('📹 [LOCAL] Video track stopped');
+          setCallState(prev => ({
+            ...prev,
+            localVideoTrack: null,
+            // ⚠️ NEVER update isCameraMuted here - only periodic sync does this
+          }));
+          return; // ✅ Early return - remote events cannot affect local state
+        }
+
+        // ✅ Handle remote participants (only if local === false)
+        if (participant.local === false) {
+          if (participant.session_id === currentRemoteSessionId) {
+            devLog('📹 [REMOTE] Video stopped for tracked participant', participant.session_id);
+            setCallState(prev => ({
+              ...prev,
+              videoTrack: null,
+              isRemoteCameraOff: true, // ✅ Remote camera is OFF
+            }));
+            setConnectionState(prev => ({ ...prev, hasRemoteVideo: false }));
+
+            // Schedule a short fallback scan to pick another remote with video if present
+            if (remoteTrackFallbackTimeoutRef.current) {
+              clearTimeout(remoteTrackFallbackTimeoutRef.current);
+              remoteTrackFallbackTimeoutRef.current = null;
+            }
+            remoteTrackFallbackTimeoutRef.current = setTimeout(() => {
+              scanForRemoteWithVideo();
+            }, 500);
+          }
+        } else {
+          // ✅ FIX: Log unexpected participant.local value
+          devWarn('⚠️ track-stopped: Participant with undefined/null local property:', participant);
+        }
+      }
+
+      // ✅ NEW: Handle audio tracks
+      if (kind === 'audio') {
+        // ✅ CRITICAL: Strict local check - ONLY update LOCAL state
+        if (participant.local === true) {
+          devLog('🎤 [LOCAL] Audio track stopped');
+          // Local audio track stopped - periodic sync will handle isMicMuted
+          return; // ✅ Early return - remote events cannot affect local state
+        }
+
+        // ✅ Handle remote participants (only if local === false)
+        if (participant.local === false) {
+          if (participant.session_id === currentRemoteSessionId) {
+            devLog('🎤 [REMOTE] Audio stopped for tracked participant', participant.session_id);
+            setCallState(prev => ({
+              ...prev,
+              isRemoteMicOff: true, // ✅ Remote mic is OFF
+            }));
+          }
+        } else {
+          devWarn('⚠️ audio track-stopped: Participant with undefined/null local property:', participant);
+        }
+      }
+    },
+    [callObject, currentRemoteSessionId, scanForRemoteWithVideo]
+  );
+
+  // Cleanup helper
+  const clearAllIntervals = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+    if (networkIntervalRef.current) {
+      clearInterval(networkIntervalRef.current);
+      networkIntervalRef.current = null;
+    }
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    if (joinTimeoutRef.current) {
+      clearTimeout(joinTimeoutRef.current);
+      joinTimeoutRef.current = null;
+    }
+    if (waitingTimeoutRef.current) {
+      clearTimeout(waitingTimeoutRef.current);
+      waitingTimeoutRef.current = null;
+    }
+    if (connectionCheckIntervalRef.current) {
+      clearInterval(connectionCheckIntervalRef.current);
+      connectionCheckIntervalRef.current = null;
+    }
+    // ✨ NEW: Clear heartbeat
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    // ✨ NEW: Clear remote track fallback timeout
+    if (remoteTrackFallbackTimeoutRef.current) {
+      clearTimeout(remoteTrackFallbackTimeoutRef.current);
+      remoteTrackFallbackTimeoutRef.current = null;
+    }
+  }, []);
+
+  // ❌ REMOVED: syncAllParticipantTracks (replaced by event-driven updates)
+
+  // ✅ FIX: Use refs for stable handler identity (prevents stale closures)
+  const handleParticipantChange = useCallback(
+    (ev?: unknown) => {
+      const event = ev as DailyParticipantEvent | undefined;
+      if (!callObject || !event?.participant) return;
+
+      const participant = event.participant;
+      const eventType = (ev as any)?.action || 'unknown';
+      devLog(
+        `👥 [PARTICIPANT-${eventType.toUpperCase()}]`,
+        participant.user_name ?? 'Unknown',
+        'Local:',
+        participant.local
+      );
+
+      // ✅ FIX #2: Strict boolean check for local participant
+      if (participant.local === true) {
+        try {
+          const localVideo = participant.tracks?.video?.persistentTrack;
+          setCallState(prev => ({
+            ...prev,
+            localVideoTrack: (localVideo as DailyMediaStreamTrack) || null,
+            isCameraMuted: !callObject.localVideo(),
+            isMicMuted: !callObject.localAudio(),
+          }));
+        } catch (error) {
+          devError('Error accessing local video track:', error);
+        }
+        return;
+      }
+
+      // ✅ FIX #2: Explicit remote participant check
+      if (participant.local === false) {
+        try {
+          const counts = callObject.participantCounts();
+          const remoteCount = Math.max(0, counts.present - 1);
+
+          // Track first remote participant with video
+          if (!currentRemoteSessionId && participant.tracks?.video?.persistentTrack) {
+            const remoteTrack = participant.tracks.video.persistentTrack;
+            devLog('🎥 Tracking new remote:', participant.session_id);
+            setCurrentRemoteSessionId(participant.session_id);
+            setCallState(prev => ({
+              ...prev,
+              videoTrack: remoteTrack as DailyMediaStreamTrack,
+              remoteParticipantCount: remoteCount,
+            }));
+
+            setConnectionState(prev => ({
+              ...prev,
+              hasRemoteVideo: true,
+              isStuck: false,
+              stuckReason: null,
+              lastSuccessfulConnection: Date.now(),
+              lastHeartbeat: Date.now(),
+            }));
+          }
+          // Update tracked participant
+          else if (participant.session_id === currentRemoteSessionId) {
+            const remoteVideo = participant.tracks?.video?.persistentTrack;
+            setCallState(prev => ({
+              ...prev,
+              videoTrack: (remoteVideo as DailyMediaStreamTrack) || null,
+              remoteParticipantCount: remoteCount,
+            }));
+          }
+          // Update count for other participants
+          else {
+            setCallState(prev => ({ ...prev, remoteParticipantCount: remoteCount }));
+          }
+        } catch (error) {
+          devError('Error handling remote participant:', error);
+        }
+        return;
+      }
+
+      // ✅ FIX #2: Log unexpected participant.local value
+      if (participant.local === undefined || participant.local === null) {
+        devWarn('⚠️ participant-change: Participant with undefined/null local property:', participant);
+        return;
+      }
+    },
+    [callObject, currentRemoteSessionId]
+  );
+
+  // ❌ REMOVED: handleParticipantChangeRef (using direct callbacks)
+
+  // ✅ ENHANCED: Participant left with explicit track cleanup
+  const handleParticipantLeft = useCallback(
+    (ev?: unknown) => {
+      const event = ev as DailyParticipantEvent | undefined;
+      if (!callObject || !event?.participant) return;
+
+      const participant = event.participant;
+      devLog('👋 Participant left:', participant.user_name ?? 'Unknown');
+
+      // Clear track if our tracked remote participant left
+      if (participant.session_id === currentRemoteSessionId) {
+        devLog('🧹 Clearing tracked remote:', participant.session_id);
+        setCurrentRemoteSessionId(null);
+        setCallState(prev => ({
+          ...prev,
+          videoTrack: null,
+        }));
+        
+        setConnectionState(prev => ({
+          ...prev,
+          hasRemoteVideo: false,
+        }));
+      }
+
+      try {
+        const counts = callObject.participantCounts();
+        setCallState(prev => ({
+          ...prev,
+          remoteParticipantCount: Math.max(0, counts.present - 1),
+        }));
+      } catch (error) {
+        devWarn('Failed to update participant count after leave:', error);
+      }
+    },
+    [callObject]
+  );
+
+  // ❌ REMOVED: handleParticipantLeftRef (using direct callbacks)
+
+  // ✨ NEW: Comprehensive error handling for all Daily.co SDK events
+  const handleMeetingError = useCallback((ev?: unknown) => {
+    const event = ev as DailyParticipantEvent | undefined;
+    devError('🎬 ❌ Meeting error:', event?.message || event?.errorMsg);
+    setAppState('error');
+    setConnectionState(prev => ({
+      ...prev,
+      isStuck: true,
+      stuckReason: 'connection_lost',
+    }));
+    try {
+      CallPerformanceMonitor.endSession();
+    } catch {}
+    onError?.(new Error(`Connection failed: ${event?.message || event?.errorMsg || 'Unknown error'}`));
+  }, [onError]);
+
+  const handleNonFatalError = useCallback((ev?: unknown) => {
+    const event = ev as DailyParticipantEvent | undefined;
+    devWarn('⚠️ Non-fatal error:', event?.message || event?.errorMsg);
+    // Don't change app state, just log for monitoring
+  }, []);
+
+  const handleCameraError = useCallback((ev?: unknown) => {
+    const event = ev as DailyParticipantEvent | undefined;
+    devError('📹 Camera error:', event?.message || event?.errorMsg);
+    // Gracefully degrade to audio-only
+    if (callObject && callType === 'video') {
+      try {
+        callObject.setLocalVideo(false);
+        setCallState(prev => ({ ...prev, isCameraMuted: true }));
+      } catch (e) {
+        devError('Failed to disable video after camera error:', e);
+      }
+    }
+  }, [callObject, callType]);
+
+  const handleNetworkConnectionEvent = useCallback((ev?: unknown) => {
+    const event = ev as DailyParticipantEvent | undefined;
+    const eventType = event?.event || 'unknown';
+    devLog(`🌐 Network connection event: ${eventType}`);
+
+    if (eventType === 'network-connection-interrupted') {
+      setConnectionState(prev => ({
+        ...prev,
+        isStuck: true,
+        stuckReason: 'connection_lost',
+      }));
+    } else if (eventType === 'network-connection-recovered') {
+      setConnectionState(prev => ({
+        ...prev,
+        isStuck: false,
+        stuckReason: null,
+        lastHeartbeat: Date.now(),
+      }));
+    }
+  }, []);
+
+  // ✨ NEW: Call health monitoring with heartbeat
+  useEffect(() => {
+    if (appState !== 'joined' || !callObject) {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      return;
+    }
+
+    devLog('💓 Starting call health monitoring...');
+
+    heartbeatIntervalRef.current = setInterval(async () => {
+      try {
+        const counts = callObject.participantCounts();
+
+        const now = Date.now();
+        const timeSinceLastHeartbeat = now - connectionState.lastHeartbeat;
+
+        // Check if we're still connected
+        if (counts.present < 1) {
+          devWarn('💔 Heartbeat check: No participants present - call may be dead');
+          setConnectionState(prev => ({
+            ...prev,
+            isStuck: true,
+            stuckReason: 'connection_lost',
+          }));
+        } else {
+          // Healthy heartbeat
+          setConnectionState(prev => ({
+            ...prev,
+            lastHeartbeat: now,
+            isStuck: false,
+            stuckReason: null,
+          }));
+        }
+
+        devLog(`💓 Heartbeat: ${counts.present} participants, ${Math.round(timeSinceLastHeartbeat / 1000)}s since last check`);
+
+      } catch (error) {
+        devError('💔 Heartbeat check failed - call object may be dead:', error);
+        setConnectionState(prev => ({
+          ...prev,
+          isStuck: true,
+          stuckReason: 'connection_lost',
+        }));
+      }
+    }, 10000); // Every 10 seconds
+
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
+  }, [appState, callObject, connectionState.lastHeartbeat]);
+
+  // Network stats monitoring
+  const updateNetworkStats = useCallback(async () => {
+    if (!callObject || appState !== 'joined') return;
+
+    try {
+      const stats = await callObject.getNetworkStats();
+      if (!stats.stats) return;
+
+      const latency = stats.stats.video?.recvLatency ?? stats.stats.audio?.recvLatency ?? 0;
+      const packetLoss = Math.round((stats.stats.video?.recvPacketLoss ?? 0) * 10000) / 100;
+
+      const latencyDiff = Math.abs(latency - networkState.latency);
+      const packetLossDiff = Math.abs(packetLoss - networkState.packetLoss);
+
+      if (latencyDiff < 10 && packetLossDiff < 0.1) {
+        return;
+      }
+
+      let quality: keyof typeof QUALITY_CONFIG = 'poor';
+      if (latency < 100 && packetLoss < 1) quality = 'excellent';
+      else if (latency < 200 && packetLoss < 3) quality = 'good';
+      else if (latency < 400 && packetLoss < 5) quality = 'fair';
+
+      setNetworkState({
+        quality,
+        latency: Math.round(latency),
+        packetLoss,
+      });
+
+      CallPerformanceMonitor.trackNetworkQuality(quality, latency, packetLoss);
+    } catch (error) {
+      devWarn('📊 Network stats update failed:', error);
+    }
+  }, [callObject, appState, networkState.latency, networkState.packetLoss]);
+
+  // Background manager listener
+  const backgroundManagerListener: VideoCallBackgroundListener = useMemo(
+    () => ({
+      id: 'EnterpriseCallInterface',
+      onAppStateChange: (appState, bgCallState) => {
+        devLog(`🎥 App state changed: ${appState}`);
+
+        // ✅ FIX #2: Sync current camera state to background manager BEFORE transition
+        if (appState === 'background' || appState === 'inactive') {
+          const currentCameraEnabled = callObject ? callObject.localVideo() : !callState.isCameraMuted;
+          devLog(`🎥 Syncing camera preference to background manager: ${currentCameraEnabled}`);
+          VideoCallBackgroundManager.getInstance().setUserCameraPreference(currentCameraEnabled);
+        
+          // 🔧 NEW: Clear camera toggle lock when backgrounding
+          if (cameraToggleInFlightRef.current) {
+            devLog('🎥 🔧 Clearing camera toggle lock due to background transition');
+            cameraToggleInFlightRef.current = false;
+          }
+        }
+
+        setUiState(prev => ({
+          ...prev,
+          isRecoveringFromBackground: bgCallState.isRecovering,
+          showBackgroundCallNotice: appState === 'active' && bgCallState.hasBackgroundTransitioned,
+        }));
+
+        if (appState === 'active' && bgCallState.hasBackgroundTransitioned) {
+          setTimeout(() => {
+            setUiState(prev => ({ ...prev, showBackgroundCallNotice: false }));
+          }, 3000);
+        }
+      },
+      onVideoStateChange: (enabled, reason) => {
+        devLog(`🎥 Video state changed: ${enabled}, reason: ${reason}`);
+      
+        // Actively fetch fresh track if camera is being enabled
+        if (enabled && callObject) {
+          try {
+            const participants = callObject.participants();
+            const localParticipant = Object.values(participants).find((p: any) => p.local === true);
+            const freshTrack = localParticipant?.tracks?.video?.persistentTrack as DailyMediaStreamTrack | undefined;
+      
+            if (freshTrack && (freshTrack as any)?.readyState === 'live') {
+              devLog(`🎥 🔧 Fetching fresh track after resume: id=${(freshTrack as any)?.id}`);
+              setCallState(prev => ({
+                ...prev,
+                isCameraMuted: false,
+                localVideoTrack: freshTrack,
+              }));
+            } else {
+              devWarn(`🎥 Camera enabled but no live track found yet`);
+              setCallState(prev => ({
+                ...prev,
+                isCameraMuted: false,
+                localVideoTrack: null,
+              }));
+            }
+          } catch (error) {
+            devError('Failed to fetch fresh track after resume:', error);
+            setCallState(prev => ({
+              ...prev,
+              isCameraMuted: !enabled,
+              localVideoTrack: null,
+            }));
+          }
+        } else {
+          setCallState(prev => ({
+            ...prev,
+            isCameraMuted: true,
+            localVideoTrack: null,
+          }));
+        }
+      },
+      onCallRecoveryStarted: () => {
+        devLog('🎥 Call recovery started');
+        setUiState(prev => ({ ...prev, isRecoveringFromBackground: true }));
+      },
+      onCallRecoveryCompleted: (success) => {
+        devLog(`🎥 Call recovery completed: ${success}`);
+        setUiState(prev => ({ ...prev, isRecoveringFromBackground: false }));
+        if (!success) {
+          onError?.(new Error('Call connection was lost. Please try reconnecting.'));
+        }
+      },
+      onQualityDegraded: (fromQuality, toQuality) => {
+        devLog(`🎥 Quality degraded: ${fromQuality} -> ${toQuality}`);
+      },
+    }),
+    [onError]
+  );
+
+  // Initialize call object
+  useEffect(() => {
+    if (!roomUrl) return;
+
+    let isMounted = true;
+
+    const initializeCallObject = async () => {
+      try {
+        const newCallObject = (await DailyCallManager.getCallObject(
+          roomUrl
+        )) as unknown as DailyCall;
+        if (isMounted) {
+          setCallObject(newCallObject);
+          CallPerformanceMonitor.startSession(roomUrl);
+          devLog('✨ Call object obtained from DailyCallManager');
+        }
+      } catch (error) {
+        if (isMounted) {
+          devError('❌ Failed to get call object:', error);
+          onError?.(new Error('Failed to initialize call'));
+        }
+      }
+    };
+
+    initializeCallObject();
+
+    return () => {
+      isMounted = false;
+      clearAllIntervals();
+      try {
+        CallPerformanceMonitor.endSession();
+      } catch {}
+
+      if (backgroundManagerUnsubscribeRef.current) {
+        backgroundManagerUnsubscribeRef.current();
+        backgroundManagerUnsubscribeRef.current = null;
+      }
+
+      devLog('🔄 EnterpriseCallInterface unmounting');
+    };
+  }, [roomUrl, onError, clearAllIntervals]);
+
+// 🔧 FIX SOLUTION #2: Update event handler refs whenever handlers change (no effect re-run)
+useEffect(() => {
+  eventHandlersRef.current = {
+    onTrackStarted,
+    onTrackStopped,
+    handleParticipantChange,
+    handleParticipantLeft,
+    handleMeetingError,
+    handleNonFatalError,
+    handleCameraError,
+    handleNetworkConnectionEvent,
+  };
+});
+
+// 🔧 FIX SOLUTION #2: Wrapper functions that always call current handler ref
+const createStableWrapper = useCallback((handlerName: string) => {
+  return (ev?: unknown) => {
+    if (eventHandlersRef.current[handlerName]) {
+      eventHandlersRef.current[handlerName](ev);
+    }
+  };
+}, []);
+
+// Create stable wrappers once (memoized)
+const stableHandlers = useMemo(() => ({
+  onTrackStarted: createStableWrapper('onTrackStarted'),
+  onTrackStopped: createStableWrapper('onTrackStopped'),
+  handleParticipantChange: createStableWrapper('handleParticipantChange'),
+  handleParticipantLeft: createStableWrapper('handleParticipantLeft'),
+  handleMeetingError: createStableWrapper('handleMeetingError'),
+  handleNonFatalError: createStableWrapper('handleNonFatalError'),
+  handleCameraError: createStableWrapper('handleCameraError'),
+  handleNetworkConnectionEvent: createStableWrapper('handleNetworkConnectionEvent'),
+}), [createStableWrapper]);
+
+  // ✅ ENHANCED: Event listeners with comprehensive error handling
+  useEffect(() => {
+    if (!callObject || !roomUrl) return;
+
+    let isMounted = true;
+
+    // ✅ FIX: Direct event handlers (no refs needed with proper dependencies)
+
+    const onJoined = () => {
+      if (!isMounted) return;
+      devLog('🎬 ✅ Joined meeting successfully');
+      const now = new Date();
+
+      if (joinTimeoutRef.current) {
+        clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
+
+      setAppState('joined');
+      setCallState(prev => ({ ...prev, callStartTime: now }));
+
+      setConnectionState(prev => ({
+        ...prev,
+        isStuck: false,
+        stuckReason: null,
+        joinStartTime: null,
+        lastSuccessfulConnection: Date.now(),
+        lastHeartbeat: Date.now(),
+      }));
+
+      // Register with background manager
+      VideoCallBackgroundManager.getInstance().startCallSession(callObject as any, callType);
+      backgroundManagerUnsubscribeRef.current = VideoCallBackgroundManager.getInstance().addListener(
+        backgroundManagerListener
+      );
+      devLog('🎥 Registered with VideoCallBackgroundManager');
+
+      // ✨ NEW: Start native platform services
+      if (Platform.OS === 'ios') {
+        CallKitManager.getInstance().reportCallConnected(callUUID);
+      } else if (Platform.OS === 'android') {
+        ForegroundServiceManager.getInstance().startService(contactName, callType, roomUrl);
+      }
+
+      // ✅ FIX: Events will handle track updates automatically (no polling needed)
+
+      waitingTimeoutRef.current = setTimeout(() => {
+        setCallState((currentCallState) => {
+          if (currentCallState.remoteParticipantCount === 0) {
+            devWarn('⏰ Timeout: No remote participant joined after 60 seconds');
+            setConnectionState(prev => ({
+              ...prev,
+              isStuck: true,
+              stuckReason: 'waiting_timeout',
+            }));
+          }
+          return currentCallState;
+        });
+      }, 60000);
+
+      if (uiState.isFullscreen) {
+        controlsTimeoutRef.current = setTimeout(() => {
+          setUiState(prev => ({ ...prev, showControls: false }));
+        }, 5000);
+      }
+    };
+
+    const onLeft = () => {
+      if (!isMounted) return;
+      devLog('🎬 Left meeting');
+      clearAllIntervals();
+
+      if (backgroundManagerUnsubscribeRef.current) {
+        backgroundManagerUnsubscribeRef.current();
+        backgroundManagerUnsubscribeRef.current = null;
+      }
+      VideoCallBackgroundManager.getInstance().endCallSession();
+
+      // ✨ NEW: Stop native platform services
+      if (Platform.OS === 'ios') {
+        CallKitManager.getInstance().endCall(callUUID);
+      } else if (Platform.OS === 'android') {
+        ForegroundServiceManager.getInstance().stopService();
+      }
+
+      try {
+        CallPerformanceMonitor.endSession();
+      } catch {}
+
+      setAppState('idle');
+      setCallState({
+        videoTrack: null,
+        localVideoTrack: null,
+        remoteParticipantCount: 0,
+        isCameraMuted: false,
+        isMicMuted: false,
+        callDuration: 0,
+        callStartTime: null,
+        isRemoteCameraOff: false,
+        isRemoteMicOff: false,
+      });
+    };
+
+    // ✅ CRITICAL: Attach ALL event listeners BEFORE joining
+    devLog('📡 Attaching comprehensive event listeners to call object');
+    callObject
+    .on('joined-meeting', onJoined)
+    .on('left-meeting', onLeft)
+    .on('error', stableHandlers.handleMeetingError)
+    .on('nonfatal-error', stableHandlers.handleNonFatalError)
+    .on('camera-error', stableHandlers.handleCameraError)
+    .on('participant-joined', stableHandlers.handleParticipantChange)
+    .on('participant-updated', stableHandlers.handleParticipantChange)
+    .on('participant-left', stableHandlers.handleParticipantLeft)
+    .on('network-connection', stableHandlers.handleNetworkConnectionEvent)
+    .on('track-started', stableHandlers.onTrackStarted)
+    .on('track-stopped', stableHandlers.onTrackStopped);
+
+    // Join the call if autoJoin is enabled
+    if (autoJoin && appState === 'idle') {
+      devLog('🔗 Joining room:', roomUrl);
+      devLog('👤 User:', userName, 'ID:', userId);
+      setAppState('joining');
+
+      const joinStartTime = Date.now();
+      setConnectionState(prev => ({
+        ...prev,
+        joinStartTime,
+        connectionAttempts: prev.connectionAttempts + 1,
+        isStuck: false,
+        stuckReason: null,
+      }));
+
+      joinTimeoutRef.current = setTimeout(() => {
+        setAppState((currentAppState) => {
+          if (currentAppState === 'joining') {
+            devWarn('⏰ Join timeout: Connection took longer than 30 seconds');
+            setConnectionState(prev => ({
+              ...prev,
+              isStuck: true,
+              stuckReason: 'join_timeout',
+            }));
+            // Notify parent so the screen can exit stuck UI if desired
+            onError?.(new Error('Join timed out'));
+          }
+          return currentAppState;
+        });
+      }, 30000);
+
+      // ✨ NEW: Start native platform services for outgoing call
+      if (Platform.OS === 'ios') {
+        CallKitManager.getInstance().startOutgoingCall(
+          callUUID,
+          contactName,
+          roomUrl,
+          callType,
+          () => devLog('📱 CallKit: Call answered'),
+          () => handleEndCall()
+        );
+      }
+
+      const effectiveUserName =
+        userName != null && userName.trim() !== '' ? userName : `User_${Date.now()}`;
+      const effectiveUserId = userId != null && userId.trim() !== '' ? userId : `id_${Date.now()}`;
+
+      const joinOptions: Record<string, unknown> = {
+        url: roomUrl,
+        startVideoOff: callType === 'audio',
+        startAudioOff: false,
+        userName: effectiveUserName,
+        userData: {
+          userId: effectiveUserId,
+          userName: effectiveUserName,
+        },
+      };
+
+      callObject.join(joinOptions).catch((error: unknown) => {
+        if (!isMounted) return;
+        devError('❌ Failed to join:', error);
+
+        if (joinTimeoutRef.current) {
+          clearTimeout(joinTimeoutRef.current);
+          joinTimeoutRef.current = null;
+        }
+
+        setAppState('error');
+        setConnectionState(prev => ({
+          ...prev,
+          isStuck: true,
+          stuckReason: 'join_timeout',
+        }));
+        onError?.(error instanceof Error ? error : new Error('Failed to join call'));
+      });
+    }
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      devLog('📡 Removing event listeners from call object');
+      callObject.off('error', stableHandlers.handleMeetingError);
+      callObject.off('nonfatal-error', stableHandlers.handleNonFatalError);
+      callObject.off('camera-error', stableHandlers.handleCameraError);
+      callObject.off('participant-joined', stableHandlers.handleParticipantChange);
+      callObject.off('participant-updated', stableHandlers.handleParticipantChange);
+      callObject.off('participant-left', stableHandlers.handleParticipantLeft);
+      callObject.off('network-connection', stableHandlers.handleNetworkConnectionEvent);
+      callObject.off('track-started', stableHandlers.onTrackStarted);
+      callObject.off('track-stopped', stableHandlers.onTrackStopped);
+    };
+  }, [
+    callObject,
+    roomUrl,
+    autoJoin,
+    callType,
+    contactName,
+    callUUID,
+    stableHandlers,
+  ]);
+
+  // Call duration and network monitoring
+  useEffect(() => {
+    clearAllIntervals();
+
+    if (appState === 'joined' && callState.callStartTime) {
+      const updateDuration = () => {
+        const duration = Math.floor((Date.now() - callState.callStartTime!.getTime()) / 1000);
+        setCallState(prev => ({ ...prev, callDuration: duration }));
+      };
+
+      durationIntervalRef.current = setInterval(updateDuration, 1000);
+
+      const config = QUALITY_CONFIG[networkState.quality];
+      networkIntervalRef.current = setInterval(updateNetworkStats, config.pollInterval);
+    }
+
+    return clearAllIntervals;
+  }, [appState, callState.callStartTime, networkState.quality, updateNetworkStats, clearAllIntervals]);
+
+  // ✨ NEW: Guard against accidental local/remote track id collision
+  useEffect(() => {
+    const localId = (callState.localVideoTrack as any)?.id;
+    const remoteId = (callState.videoTrack as any)?.id;
+    if (localId && remoteId && localId === remoteId) {
+      devWarn('⚠️ Duplicate video track id detected for local and remote. Clearing local preview to resync.', localId);
+      setCallState(prev => ({ ...prev, localVideoTrack: null }));
+    }
+  }, [callState.localVideoTrack, callState.videoTrack]);
+
+  // ✅ FIX #3: Track state listeners for local video
+  useEffect(() => {
+    if (!callState.localVideoTrack || callType !== 'video') return;
+
+    const track = callState.localVideoTrack as any;
+
+    const handleTrackEnded = () => {
+      devLog('📹 Local track ended event - clearing from state');
+      setCallState(prev => ({
+        ...prev,
+        localVideoTrack: null,
+        // ❌ REMOVED: isCameraMuted update - periodic sync handles this
+      }));
+    };
+
+    // Listen to native track ended event
+    track.addEventListener?.('ended', handleTrackEnded);
+
+    // Check current state immediately
+    if (track.readyState === 'ended') {
+      devLog('📹 Local track already ended on mount');
+      handleTrackEnded();
+    }
+
+    return () => {
+      track.removeEventListener?.('ended', handleTrackEnded);
+    };
+  }, [callState.localVideoTrack, callType]);
+
+  // ✅ FIX #3: Track state listeners for remote video
+  useEffect(() => {
+    if (!callState.videoTrack) return;
+
+    const track = callState.videoTrack as any;
+
+    const handleTrackEnded = () => {
+      devLog('📹 Remote track ended event - clearing from state');
+      setCallState(prev => ({
+        ...prev,
+        videoTrack: null,
+      }));
+      setConnectionState(prev => ({
+        ...prev,
+        hasRemoteVideo: false,
+      }));
+    };
+
+    // Listen to native track ended event
+    track.addEventListener?.('ended', handleTrackEnded);
+
+    // Check current state immediately
+    if (track.readyState === 'ended') {
+      devLog('📹 Remote track already ended on mount');
+      handleTrackEnded();
+    }
+
+    return () => {
+      track.removeEventListener?.('ended', handleTrackEnded);
+    };
+  }, [callState.videoTrack]);
+
+  // ✅ FIX #6: Improved periodic camera state verification (LOCAL ONLY - reduced to 1s)
+  useEffect(() => {
+    if (appState !== 'joined' || !callObject || callType !== 'video') return;
+
+    devLog('🔄 Starting periodic LOCAL camera state verification...');
+
+    const syncInterval = setInterval(() => {
+      try {
+        // STEP 1: Get SDK camera state (source of truth)
+        const sdkLocalCameraState = callObject.localVideo();
+    
+        // STEP 2: Fetch fresh LOCAL track if camera is ON
+        let freshLocalTrack: DailyMediaStreamTrack | null = null;
+        if (sdkLocalCameraState) {
+          try {
+            const participants = callObject.participants();
+            const localParticipant = Object.values(participants).find((p: any) => p.local === true);
+            const candidateTrack = localParticipant?.tracks?.video?.persistentTrack as DailyMediaStreamTrack | undefined;
+    
+            if (candidateTrack && (candidateTrack as any)?.readyState === 'live') {
+              freshLocalTrack = candidateTrack;
+            }
+          } catch (err) {
+            devWarn('🔄 Failed to fetch local track during sync:', err);
+          }
+        }
+    
+        // STEP 3: Sync BOTH flag AND track
+        setCallState(prev => {
+          const flagInSync = prev.isCameraMuted === !sdkLocalCameraState;
+          const trackInSync = sdkLocalCameraState
+            ? isTrackLive(prev.localVideoTrack) && prev.localVideoTrack
+            : !prev.localVideoTrack;
+    
+          if (flagInSync && trackInSync) {
+            return prev;
+          }
+    
+          if (!flagInSync) {
+            devWarn(`⚠️ 🔧 Resyncing LOCAL camera FLAG: ${prev.isCameraMuted} → ${!sdkLocalCameraState}`);
+          }
+          if (!trackInSync && sdkLocalCameraState && freshLocalTrack) {
+            devWarn(`⚠️ 🔧 Resyncing LOCAL camera TRACK: fetched id=${(freshLocalTrack as any)?.id}`);
+          }
+    
+          return {
+            ...prev,
+            isCameraMuted: !sdkLocalCameraState,
+            localVideoTrack: sdkLocalCameraState ? (freshLocalTrack || prev.localVideoTrack) : null,
+          };
+        });
+      } catch (error) {
+        devError('🔄 🔧 HOLISTIC camera state sync error:', error);
+      }
+    }, 1000);
+
+    return () => {
+      devLog('🔄 Stopping periodic LOCAL camera state verification');
+      clearInterval(syncInterval);
+    };
+  }, [appState, callObject, callType]);
+
+  // ✅ NEW: Periodic mic state verification (LOCAL ONLY - 1s interval)
+  useEffect(() => {
+    if (appState !== 'joined' || !callObject) return;
+
+    devLog('🔄 Starting periodic LOCAL mic state verification...');
+
+    const syncInterval = setInterval(() => {
+      try {
+        // ✅ CRITICAL: Only sync LOCAL mic state from SDK
+        const sdkLocalMicState = callObject.localAudio();
+
+        // ⚠️ This ONLY updates isMicMuted (LOCAL mic state)
+        // Remote mic state is tracked separately via isRemoteMicOff
+        setCallState(prev => {
+          if (prev.isMicMuted === !sdkLocalMicState) {
+            return prev; // Already in sync
+          }
+
+          devWarn(`⚠️ Resyncing LOCAL mic state to SDK: ${sdkLocalMicState}`);
+          return {
+            ...prev,
+            isMicMuted: !sdkLocalMicState, // ✅ LOCAL mic state only
+            // ⚠️ isRemoteMicOff is NOT touched here - remote events handle it
+          };
+        });
+      } catch (error) {
+        devError('🔄 LOCAL mic state sync error:', error);
+      }
+    }, 1000); // ✅ 1 second for faster sync
+
+    return () => {
+      devLog('🔄 Stopping periodic LOCAL mic state verification');
+      clearInterval(syncInterval);
+    };
+  }, [appState, callObject]);
+
+  // ✅ FIX #2: Simplified camera toggle - LOCAL camera only
+  const toggleCamera = useCallback(async () => {
+    if (!callObject || appState !== 'joined' || cameraToggleInFlightRef.current) {
+      return;
+    }
+
+    devLog('📹 [LOCAL] Toggling LOCAL camera...');
+    cameraToggleInFlightRef.current = true;
+
+    try {
+      // ✅ CRITICAL: This ONLY affects LOCAL camera (callObject.localVideo)
+      // Remote camera state is managed separately via participant events
+      const isCurrentlyOn = callObject.localVideo();
+      const targetState = !isCurrentlyOn;
+
+      devLog(`📹 [LOCAL] Camera toggle: ${isCurrentlyOn} → ${targetState}`);
+
+      // ✅ Sync LOCAL camera preference BEFORE SDK call
+      VideoCallBackgroundManager.getInstance().setUserCameraPreference(targetState);
+
+      // ✅ FIX #2: Call SDK and let track events handle state updates
+      // This ONLY toggles LOCAL camera - remote participants are unaffected
+      callObject.setLocalVideo(targetState);
+
+      // ✅ Animation feedback for user responsiveness
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 0.9, duration: 100, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]).start();
+
+    } catch (error) {
+      devError('📹 [LOCAL] Camera toggle failed:', error);
+      // On error, the periodic sync will correct the state
+    } finally {
+      // Clear lock after animation completes
+      setTimeout(() => {
+        cameraToggleInFlightRef.current = false;
+      }, 250);
+    }
+  }, [callObject, appState, scaleAnim]);
+
+  // ✅ Mic toggle - LOCAL mic only, NO optimistic updates (trust SDK)
+  const toggleMic = useCallback(() => {
+    if (!callObject || appState !== 'joined') return;
+
+    try {
+      // ✅ CRITICAL: This ONLY affects LOCAL mic (callObject.localAudio)
+      // Remote mic state is managed separately via participant events
+      const isCurrentlyOn = callObject.localAudio();
+      const targetState = !isCurrentlyOn;
+
+      devLog(`🎤 [LOCAL] Toggling LOCAL mic: ${isCurrentlyOn} → ${targetState}`);
+
+      // ✅ Call SDK - let periodic sync handle state updates
+      // No optimistic updates - trust SDK as single source of truth
+      callObject.setLocalAudio(targetState);
+
+      // ✨ Update CallKit mute state (iOS only)
+      if (Platform.OS === 'ios') {
+        CallKitManager.getInstance().setCallMuted(callUUID, !targetState);
+      }
+
+      // ✅ Animation feedback for user responsiveness
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 0.9, duration: 100, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]).start();
+    } catch (error) {
+      devError('🎤 [LOCAL] Mic toggle failed:', error);
+      // On error, periodic sync will correct the state
+    }
+  }, [callObject, appState, scaleAnim, callUUID]);
+
+  // Fullscreen toggle
+  const toggleFullscreen = useCallback(() => {
+    const newFullscreen = !uiState.isFullscreen;
+
+    setUiState(prev => ({
+      ...prev,
+      isFullscreen: newFullscreen,
+      showControls: true,
+    }));
+
+    if (newFullscreen) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setUiState(prev => ({ ...prev, showControls: false }));
+      }, 5000);
+    }
+  }, [uiState.isFullscreen]);
+
+  // Handle force exit for stuck connections
+  const handleForceExit = useCallback(() => {
+    devLog('🚨 Force exiting stuck connection');
+
+    clearAllIntervals();
+
+    if (callObject) {
+      callObject.leave().catch(() => {
+        devWarn('Force exit: Could not leave gracefully');
+      });
+      DailyCallManager.forceCleanup().catch(() => {
+        devWarn('Force exit: Cleanup failed');
+      });
+    }
+
+    // ✨ NEW: Stop native services
+    if (Platform.OS === 'ios') {
+      CallKitManager.getInstance().endCall(callUUID);
+    } else if (Platform.OS === 'android') {
+      ForegroundServiceManager.getInstance().stopService();
+    }
+
+    setAppState('idle');
+    setCallState({
+      videoTrack: null,
+      localVideoTrack: null,
+      remoteParticipantCount: 0,
+      isCameraMuted: false,
+      isMicMuted: false,
+      callDuration: 0,
+      callStartTime: null,
+      isRemoteCameraOff: false,
+      isRemoteMicOff: false,
+    });
+    setConnectionState({
+      isStuck: false,
+      stuckReason: null,
+      joinStartTime: null,
+      hasRemoteVideo: false,
+      hasRemoteAudio: false,
+      connectionAttempts: 0,
+      lastSuccessfulConnection: null,
+      lastHeartbeat: Date.now(),
+    });
+
+    onEndCall();
+  }, [callObject, onEndCall, clearAllIntervals, callUUID]);
+
+  // Retry connection
+  const handleRetryConnection = useCallback(() => {
+    devLog('🔄 Retrying connection...');
+
+    setConnectionState(prev => ({
+      ...prev,
+      isStuck: false,
+      stuckReason: null,
+    }));
+
+    setAppState('error');
+  }, []);
+
+  // End call
+  const handleEndCall = useCallback(async () => {
+    if (!callObject) {
+      onEndCall();
+      return;
+    }
+
+    devLog('👋 Ending call gracefully...');
+    setAppState('leaving');
+
+    Animated.timing(fadeAnim, {
+      toValue: 0.5,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    try {
+      await callObject.leave();
+      devLog('✅ Successfully left call');
+      await DailyCallManager.cleanup();
+    } catch (error) {
+      devError('❌ Error during leave:', error);
+      await DailyCallManager.forceCleanup();
+    } finally {
+      try {
+        CallPerformanceMonitor.endSession();
+      } catch {}
+
+      // ✨ NEW: Stop native services
+      if (Platform.OS === 'ios') {
+        CallKitManager.getInstance().endCall(callUUID);
+      } else if (Platform.OS === 'android') {
+        ForegroundServiceManager.getInstance().stopService();
+      }
+
+      setAppState('idle');
+      setCallState({
+        videoTrack: null,
+        localVideoTrack: null,
+        remoteParticipantCount: 0,
+        isCameraMuted: false,
+        isMicMuted: false,
+        callDuration: 0,
+        callStartTime: null,
+        isRemoteCameraOff: false,
+        isRemoteMicOff: false,
+      });
+      onEndCall();
+    }
+  }, [callObject, onEndCall, fadeAnim, callUUID]);
+
+  // Helper functions
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getQualityColor = (quality: string): string => {
+    switch (quality) {
+      case 'excellent':
+        return '#4CAF50';
+      case 'good':
+        return '#8BC34A';
+      case 'fair':
+        return '#FF9800';
+      case 'poor':
+        return '#F44336';
+      default:
+        return '#9E9E9E';
+    }
+  };
+
+  const getQualityIcon = (quality: string): keyof typeof Ionicons.glyphMap => {
+    switch (quality) {
+      case 'excellent':
+        return 'wifi';
+      case 'good':
+        return 'wifi';
+      case 'fair':
+        return 'wifi-outline';
+      case 'poor':
+        return 'wifi-outline';
+      default:
+        return 'help-circle-outline';
+    }
+  };
+
+  // Animated styles
+  const topBarAnimatedStyle = useMemo(
+    () => ({ opacity: uiState.showControls ? (fadeAnim as unknown as number) : 0 }),
+    [uiState.showControls, fadeAnim]
+  );
+  const controlTrayAnimatedStyle = useMemo(
+    () => ({
+      opacity: uiState.showControls ? (fadeAnim as unknown as number) : 0,
+      transform: [{ scale: scaleAnim as unknown as number }],
+    }),
+    [uiState.showControls, fadeAnim, scaleAnim]
+  );
+
+  // Render error state
+  if (appState === 'error') {
+    return (
+      <SafeAreaView style={[styles.container, styles.errorContainer]}>
+        <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
+        <View style={styles.statusArea}>
+          <View style={styles.errorIcon}>
+            <Ionicons name="alert-circle" size={80} color="#F44336" />
+          </View>
+          <Text style={styles.errorTitle}>Connection Failed</Text>
+          <Text style={styles.errorMessage}>
+            Unable to connect to the call. Please check your internet connection and try again.
+          </Text>
+          <View style={styles.errorActions}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.retryButton]}
+              onPress={() => {
+                setAppState('idle');
+                if (callObject && roomUrl) {
+                  callObject
+                    .join({
+                      url: roomUrl,
+                      // Retry with conservative defaults
+                      startVideoOff: callType === 'audio',
+                      startAudioOff: false,
+                      userName: userName || `User_${Date.now()}`,
+                      userData: {
+                        userId: userId || `id_${Date.now()}`,
+                        userName: userName || 'User',
+                      },
+                    })
+                    .catch(onError);
+                }
+              }}
+              accessibilityLabel="Retry connection"
+            >
+              <Ionicons name="refresh" size={20} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.actionButtonText}>Try Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.endButton]}
+              onPress={handleEndCall}
+              accessibilityLabel="End call"
+            >
+              <Ionicons name="call-outline" size={20} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.actionButtonText}>End Call</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ✨ ENHANCED: Render joining/leaving state with exit button and timeout detection
+  if (appState === 'joining' || appState === 'leaving') {
+    const isJoining = appState === 'joining';
+    const joinDuration = connectionState.joinStartTime
+      ? Math.floor((Date.now() - connectionState.joinStartTime) / 1000)
+      : 0;
+    const showStuckWarning = connectionState.isStuck && connectionState.stuckReason === 'join_timeout';
+
+    return (
+      <SafeAreaView style={[styles.container, styles.loadingContainer]}>
+        <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
+        <View style={styles.statusArea}>
+          <View style={styles.loadingIcon}>
+            <ActivityIndicator size="large" color={showStuckWarning ? "#FF9800" : "#007AFF"} />
+          </View>
+          <Text style={[styles.loadingTitle, showStuckWarning && { color: '#FF9800' }]}>
+            {isJoining
+              ? (showStuckWarning ? 'Connection Taking Longer Than Expected' : 'Connecting...')
+              : 'Ending Call...'}
+          </Text>
+          <Text style={styles.loadingMessage}>
+            {isJoining
+              ? (showStuckWarning
+                  ? 'Having trouble connecting to the call'
+                  : `Connecting to ${contactName}`)
+              : 'Disconnecting from call...'}
+          </Text>
+
+          {isJoining && joinDuration > 10 && (
+            <Text style={styles.connectionTimer}>
+              Time elapsed: {joinDuration}s
+            </Text>
+          )}
+
+          {medicalContext?.consultationType && isJoining && !showStuckWarning && (
+            <View style={styles.consultationBadge}>
+              <Ionicons name="medical" size={16} color="#007AFF" />
+              <Text style={styles.consultationText}>
+                {medicalContext.consultationType.charAt(0).toUpperCase() +
+                  medicalContext.consultationType.slice(1)}{' '}
+                Consultation
+              </Text>
+            </View>
+          )}
+
+          {/* ✨ NEW: Always show exit button */}
+          {isJoining && (
+            <View style={styles.stuckActions}>
+              {showStuckWarning && (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.retryButton]}
+                  onPress={handleRetryConnection}
+                  accessibilityLabel="Retry connection"
+                >
+                  <Ionicons name="refresh" size={20} color="#fff" style={styles.buttonIcon} />
+                  <Text style={styles.actionButtonText}>Try Again</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.actionButton, showStuckWarning ? styles.endButton : styles.cancelButton]}
+                onPress={handleForceExit}
+                accessibilityLabel="Cancel and exit"
+              >
+                <Ionicons name="close" size={20} color="#fff" style={styles.buttonIcon} />
+                <Text style={styles.actionButtonText}>
+                  {showStuckWarning ? 'Exit' : 'Cancel'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ✨ NEW: Troubleshooting tips */}
+          {showStuckWarning && (
+            <View style={styles.troubleshootingTips}>
+              <Text style={styles.tipsTitle}>Troubleshooting Tips:</Text>
+              <Text style={styles.tipText}>• Check your internet connection</Text>
+              <Text style={styles.tipText}>• Make sure the other person has joined</Text>
+              <Text style={styles.tipText}>• Try closing and reopening the app</Text>
+            </View>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Render main call interface
+  if (appState === 'joined') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" hidden={uiState.isFullscreen} />
+
+        {/* Video Area */}
+        <View style={[styles.videoContainer, uiState.isFullscreen && styles.fullscreenVideo]}>
+          {callState.remoteParticipantCount > 0 ? (
+            /* ✅ FIX #1: Use isTrackLive() to prevent frozen remote frames */
+            isTrackLive(callState.videoTrack) ? (
+              <>
+                <DailyMediaView
+                  videoTrack={callState.videoTrack}
+                  audioTrack={null}
+                  mirror={false}
+                  objectFit="cover"
+                  style={styles.remoteVideo}
+                />
+                {/* ✅ NEW: Show indicator when remote turns camera off (while track exists) */}
+                {callState.isRemoteCameraOff && (
+                  <View style={styles.remoteCameraOffBadge}>
+                    <Ionicons name="videocam-off" size={20} color="#fff" />
+                    <Text style={styles.remoteCameraOffText}>Camera off</Text>
+                  </View>
+                )}
+                {/* ✅ NEW: Show indicator when remote mutes mic */}
+                {callState.isRemoteMicOff && (
+                  <View style={styles.remoteMicOffBadge}>
+                    <Ionicons name="mic-off" size={20} color="#fff" />
+                    <Text style={styles.remoteMicOffText}>Mic off</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              /* ✨ Connected but no video - show audio-only indicator */
+              <View style={styles.audioOnlyArea}>
+                <View style={styles.audioOnlyIcon}>
+                  <Ionicons name="headset" size={80} color="#007AFF" />
+                </View>
+                <Text style={styles.audioOnlyTitle}>Audio Only</Text>
+                <Text style={styles.audioOnlyMessage}>
+                  {contactName}'s camera is off or video is unavailable
+                </Text>
+                <Text style={styles.audioOnlySubMessage}>
+                  {callState.isRemoteMicOff
+                    ? `${contactName}'s microphone is muted`
+                    : 'You can still hear each other'}
+                </Text>
+                {/* ✅ NEW: Show mic indicator in audio-only mode too */}
+                {callState.isRemoteMicOff && (
+                  <View style={[styles.remoteMicOffBadge, { position: 'relative', top: 0, left: 0, marginTop: 16 }]}>
+                    <Ionicons name="mic-off" size={20} color="#fff" />
+                    <Text style={styles.remoteMicOffText}>Mic off</Text>
+                  </View>
+                )}
+              </View>
+            )
+          ) : (
+            <View style={styles.waitingArea}>
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={60} color="#fff" />
+              </View>
+              <Text style={styles.waitingTitle}>Waiting for {contactName}</Text>
+              <Text style={styles.waitingSubtitle}>{contactTitle}</Text>
+              <Text style={styles.waitingMessage}>
+                {connectionState.isStuck && connectionState.stuckReason === 'waiting_timeout'
+                  ? 'They may not have joined yet. You can wait or end the call.'
+                  : 'They will join the call shortly'}
+              </Text>
+
+              {/* ✨ NEW: Show waiting timeout warning */}
+              {connectionState.isStuck && connectionState.stuckReason === 'waiting_timeout' && (
+                <View style={styles.waitingTimeout}>
+                  <Ionicons name="time-outline" size={24} color="#FF9800" />
+                  <Text style={styles.waitingTimeoutText}>
+                    Still waiting after 1 minute
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Recovery overlay */}
+          {uiState.isRecoveringFromBackground && (
+            <View style={styles.recoveryOverlay}>
+              <BlurView intensity={80} style={styles.recoveryBlur}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text style={styles.recoveryTitle}>Reconnecting...</Text>
+                <Text style={styles.recoveryMessage}>Restoring call after background transition</Text>
+              </BlurView>
+            </View>
+          )}
+
+          {/* Background notice */}
+          {uiState.showBackgroundCallNotice && !uiState.isRecoveringFromBackground && (
+            <Animated.View style={[styles.backgroundNotice, { opacity: fadeAnim }]}>
+              <BlurView intensity={60} style={styles.backgroundNoticeBlur}>
+                <Ionicons name="phone-portrait-outline" size={20} color="#007AFF" />
+                <Text style={styles.backgroundNoticeText}>Call resumed from background</Text>
+              </BlurView>
+            </Animated.View>
+          )}
+
+          {/* Local video preview */}
+          {callType === 'video' && (
+            <View
+              style={[
+                styles.localVideoContainer,
+                screenData.isLandscape && styles.localVideoLandscape,
+              ]}
+            >
+              {/* ✅ FIX #1: Use isTrackLive() to prevent frozen frames */}
+              {isTrackLive(callState.localVideoTrack) ? (
+                <DailyMediaView
+                  videoTrack={callState.localVideoTrack}
+                  audioTrack={null}
+                  mirror
+                  objectFit="cover"
+                  style={styles.localVideo}
+                />
+              ) : (
+                <View style={[styles.localVideo, styles.localVideoPlaceholder]}>
+                  <Ionicons
+                    name={callState.isCameraMuted ? 'videocam-off' : 'videocam'}
+                    size={30}
+                    color="rgba(255,255,255,0.7)"
+                  />
+                  <Text style={styles.localVideoPlaceholderText}>
+                    {callState.isCameraMuted ? 'Camera Off' : 'Starting...'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Top bar */}
+          <Animated.View
+            style={[
+              styles.topBar,
+              topBarAnimatedStyle,
+              uiState.isFullscreen && !uiState.showControls && styles.hiddenBar,
+            ]}
+          >
+            <BlurView intensity={20} style={styles.topBarBlur}>
+              <View style={styles.topBarContent}>
+                <View style={styles.callInfo}>
+                  <Text style={styles.contactName} numberOfLines={1}>
+                    {contactName}
+                  </Text>
+                  <Text style={styles.contactTitle} numberOfLines={1}>
+                    {contactTitle}
+                  </Text>
+                </View>
+
+                <View style={styles.callStats}>
+                  <View style={styles.durationContainer}>
+                    <Ionicons name="time-outline" size={16} color="#fff" />
+                    <Text style={styles.durationText}>{formatDuration(callState.callDuration)}</Text>
+                  </View>
+
+                  <View style={styles.qualityContainer}>
+                    <Ionicons
+                      name={getQualityIcon(networkState.quality)}
+                      size={16}
+                      color={getQualityColor(networkState.quality)}
+                    />
+                    <Text
+                      style={[styles.qualityText, { color: getQualityColor(networkState.quality) }]}
+                    >
+                      {networkState.quality.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.fullscreenButton}
+                  onPress={toggleFullscreen}
+                  accessibilityLabel={uiState.isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                >
+                  <Ionicons
+                    name={uiState.isFullscreen ? 'contract-outline' : 'expand-outline'}
+                    size={24}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+              </View>
+            </BlurView>
+          </Animated.View>
+
+          {/* Fullscreen tap area */}
+          {uiState.isFullscreen && (
+            <TouchableOpacity
+              style={styles.fullscreenTap}
+              onPress={() => {
+                const newShowControls = !uiState.showControls;
+                setUiState(prev => ({ ...prev, showControls: newShowControls }));
+                if (newShowControls) {
+                  if (controlsTimeoutRef.current) {
+                    clearTimeout(controlsTimeoutRef.current);
+                  }
+                  controlsTimeoutRef.current = setTimeout(() => {
+                    setUiState(prev => ({ ...prev, showControls: false }));
+                  }, 5000);
+                }
+              }}
+              activeOpacity={1}
+            />
+          )}
+        </View>
+
+        {/* Control tray */}
+        <Animated.View
+          style={[
+            styles.controlTray,
+            controlTrayAnimatedStyle,
+            uiState.isFullscreen && !uiState.showControls && styles.hiddenControls,
+          ]}
+        >
+          <BlurView intensity={30} style={styles.controlBlur}>
+            <View style={styles.controlContent}>
+              <View style={styles.primaryControls}>
+                <TouchableOpacity
+                  style={[styles.controlButton, callState.isMicMuted && styles.mutedButton]}
+                  onPress={toggleMic}
+                  accessibilityLabel={callState.isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                >
+                  <Ionicons
+                    name={callState.isMicMuted ? 'mic-off' : 'mic'}
+                    size={28}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+
+                {callType === 'video' && (
+                  <TouchableOpacity
+                    style={[
+                      styles.controlButton,
+                      /* ✅ FIX #4: Use SDK state directly for icon styling */
+                      callState.isCameraMuted && styles.mutedButton
+                    ]}
+                    onPress={toggleCamera}
+                    accessibilityLabel={
+                      callState.isCameraMuted ? 'Turn on camera' : 'Turn off camera'
+                    }
+                  >
+                    <Ionicons
+                      /* ✅ FIX #4: Icon reflects UI state (synced via periodic check) */
+                      name={callState.isCameraMuted ? 'videocam-off' : 'videocam'}
+                      size={28}
+                      color="#fff"
+                    />
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.controlButton, styles.endCallButton]}
+                  onPress={handleEndCall}
+                  accessibilityLabel="End call"
+                >
+                  <Ionicons name="call" size={28} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.qualityIndicator}>
+                <Ionicons
+                  name={getQualityIcon(networkState.quality)}
+                  size={20}
+                  color={getQualityColor(networkState.quality)}
+                />
+                <Text style={[styles.qualityLabel, { color: getQualityColor(networkState.quality) }]}>
+                  {networkState.latency}ms | {networkState.packetLoss}% loss
+                </Text>
+              </View>
+            </View>
+          </BlurView>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
+  // Default initialization state
+  return (
+    <SafeAreaView style={[styles.container, styles.loadingContainer]}>
+      <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
+      <View style={styles.statusArea}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingTitle}>Initializing Call...</Text>
+        <Text style={styles.loadingMessage}>Setting up secure connection</Text>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  errorContainer: {
+    backgroundColor: '#1a1a1a',
+  },
+  loadingContainer: {
+    backgroundColor: '#1a1a1a',
+  },
+  videoContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  fullscreenVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+  },
+  remoteVideo: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  localVideoContainer: {
+    position: 'absolute',
+    top: 100,
+    right: 20,
+    width: 120,
+    height: 160,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  localVideoLandscape: {
+    top: 60,
+    right: 20,
+    width: 160,
+    height: 120,
+  },
+  localVideo: {
+    flex: 1,
+  },
+  localVideoPlaceholder: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  localVideoPlaceholderText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  fullscreenTap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  waitingArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 3,
+    borderColor: '#007AFF',
+  },
+  waitingTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  waitingSubtitle: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  waitingMessage: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  hiddenBar: {
+    opacity: 0,
+  },
+  topBarBlur: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+  },
+  topBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  callInfo: {
+    flex: 1,
+  },
+  contactName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  contactTitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  callStats: {
+    alignItems: 'flex-end',
+    marginHorizontal: 16,
+  },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  durationText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  qualityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  qualityText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  fullscreenButton: {
+    padding: 8,
+  },
+  controlTray: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  hiddenControls: {
+    opacity: 0,
+  },
+  controlBlur: {
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    paddingTop: 24,
+    paddingHorizontal: 20,
+  },
+  controlContent: {
+    alignItems: 'center',
+  },
+  primaryControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 24,
+  },
+  controlButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  mutedButton: {
+    backgroundColor: '#F44336',
+    borderColor: '#F44336',
+  },
+  endCallButton: {
+    backgroundColor: '#F44336',
+    borderColor: '#F44336',
+  },
+  qualityIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 16,
+  },
+  qualityLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  statusArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingIcon: {
+    marginBottom: 24,
+  },
+  loadingTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  loadingMessage: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  consultationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 122, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 16,
+  },
+  consultationText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  errorIcon: {
+    marginBottom: 24,
+  },
+  errorTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  errorMessage: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 25,
+    minWidth: 120,
+    justifyContent: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+  },
+  endButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  recoveryOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 30,
+  },
+  recoveryBlur: {
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+  },
+  recoveryTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  recoveryMessage: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  backgroundNotice: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    right: 20,
+    zIndex: 25,
+  },
+  backgroundNoticeBlur: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  backgroundNoticeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+    flex: 1,
+  },
+  // ✨ NEW: Stuck connection and timeout styles
+  stuckActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 24,
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  connectionTimer: {
+    color: '#FF9800',
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  troubleshootingTips: {
+    marginTop: 32,
+    padding: 20,
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 152, 0, 0.3)',
+  },
+  tipsTitle: {
+    color: '#FF9800',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  tipText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  audioOnlyArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  audioOnlyIcon: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(0, 122, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 3,
+    borderColor: '#007AFF',
+  },
+  audioOnlyTitle: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  audioOnlyMessage: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 18,
+    textAlign: 'center',
+    lineHeight: 26,
+    marginBottom: 8,
+  },
+  audioOnlySubMessage: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  waitingTimeout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: 'rgba(255, 152, 0, 0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 152, 0, 0.3)',
+  },
+  waitingTimeoutText: {
+    color: '#FF9800',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  // ✅ NEW: Remote camera off indicator badge
+  remoteCameraOffBadge: {
+    position: 'absolute',
+    top: 80,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#F44336',
+  },
+  remoteCameraOffText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // ✅ NEW: Remote mic off indicator badge
+  remoteMicOffBadge: {
+    position: 'absolute',
+    top: 120, // Below camera badge
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#FF9800', // Orange for mic
+  },
+  remoteMicOffText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+});
+
+export { EnterpriseCallInterface };

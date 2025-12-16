@@ -1,0 +1,154 @@
+{
+  "expo": {
+    "name": "HopMed",
+    "slug": "hopmed-droid",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-hopmed-purple-teal.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#2D1B69"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hopmed.mobile",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSHealthShareUsageDescription": "HopMed needs access to read your health data to provide personalized medical insights, track your wellness metrics during consultations, and help you monitor your health progress over time. Your data stays private and secure on your device.",
+        "NSHealthUpdateUsageDescription": "HopMed needs to write health data to keep accurate records of your medical treatments, recovery progress, and health goals. This helps provide better continuity of care with your healthcare providers.",
+        "NSHealthClinicalHealthRecordsShareUsageDescription": "HopMed can access your clinical health records to provide comprehensive medical history to your healthcare providers during consultations, ensuring they have the complete picture of your health.",
+        "NSHealthRequiredReadAuthorizationTypeIdentifiers": [
+          "HKQuantityTypeIdentifierHeartRate",
+          "HKQuantityTypeIdentifierStepCount",
+          "HKQuantityTypeIdentifierDistanceWalkingRunning",
+          "HKQuantityTypeIdentifierActiveEnergyBurned",
+          "HKQuantityTypeIdentifierBodyMass",
+          "HKQuantityTypeIdentifierBloodPressureSystolic",
+          "HKQuantityTypeIdentifierBloodPressureDiastolic",
+          "HKQuantityTypeIdentifierOxygenSaturation",
+          "HKQuantityTypeIdentifierBodyTemperature",
+          "HKQuantityTypeIdentifierBloodGlucose",
+          "HKQuantityTypeIdentifierRespiratoryRate",
+          "HKQuantityTypeIdentifierRestingHeartRate",
+          "HKCategoryTypeIdentifierSleepAnalysis"
+        ],
+        "NSCameraUsageDescription": "This app needs camera access to take photos for medical consultations and video calls",
+        "NSMicrophoneUsageDescription": "This app needs microphone access for video consultations and audio calls",
+        "NSLocalNetworkUsageDescription": "This app needs local network access for video calls",
+        "NSBluetoothAlwaysUsageDescription": "This app needs bluetooth access for audio devices during calls and to connect to health monitoring devices",
+        "UIBackgroundModes": [
+          "background-processing",
+          "background-fetch",
+          "voip",
+          "background-app-refresh"
+        ],
+        "UIRequiredDeviceCapabilities": [
+          "healthkit"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#2D1B69"
+      },
+      "package": "com.hopmed.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_CAMERA",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.BODY_SENSORS",
+        "android.permission.BODY_SENSORS_BACKGROUND",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.READ_WEIGHT",
+        "android.permission.health.READ_BLOOD_PRESSURE",
+        "android.permission.health.READ_BODY_TEMPERATURE",
+        "android.permission.health.READ_OXYGEN_SATURATION",
+        "android.permission.health.READ_BLOOD_GLUCOSE",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_CALORIES_BURNED",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_EXERCISE",
+        "android.permission.health.READ_RESPIRATORY_RATE",
+        "android.permission.health.WRITE_STEPS",
+        "android.permission.health.WRITE_WEIGHT",
+        "android.permission.health.WRITE_BLOOD_PRESSURE",
+        "android.permission.health.WRITE_BODY_TEMPERATURE",
+        "android.permission.health.WRITE_BLOOD_GLUCOSE",
+        "android.permission.health.WRITE_EXERCISE"
+      ],
+      "intentFilters": [
+        {
+          "action": "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE",
+          "autoVerify": true,
+          "category": [
+            "android.intent.category.DEFAULT"
+          ]
+        }
+      ]
+    },
+    "extra": {
+      "supportUrl": "https://hopmed-ci.com/contacts",
+      "marketingUrl": "https://hopmed-ci.com/a-propos",
+      "copyright": "2024 LaNewScience",
+      
+      "HOPMED_FEATURE_VIDEO_ENABLED": "true",
+      "HOPMED_FEATURE_HEALTH_ENABLED": "true",
+      
+      "note": "Environment variables are now managed through the standardized system. See ENVIRONMENT_VARIABLES_DESIGN.md",
+      "eas": {
+        "projectId": "0b8a9e9b-2b76-4743-adec-c08db3f01610"
+      }
+    },
+    "plugins": [
+      "./plugins/with-healthkit.js",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 28,
+            "usesCleartextTraffic": true,
+            "proguardFiles": ["proguard-android-optimize.txt", "proguard-rules.pro"]
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "self-m66"
+        }
+      ],
+      "react-native-health",
+      "react-native-health-connect",
+      "@daily-co/config-plugin-rn-daily-js",
+      "expo-secure-store"
+    ],
+    "owner": "haashinaa"
+  }
+}
